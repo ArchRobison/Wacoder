@@ -67,7 +67,7 @@ static void SegmentWas( const float* a, int n, WaBounds& bounds ) {
         sum += i+h<n ? Square(a[i+h]) : 0;
         sum -= i-h>=0 ? Square(a[i-h]) : 0;
         if( 0<=i && i<n ) 
-            b[i] = sum;
+            b[i] = float(sum);
     }
     SimpleArray<bool>  c(n);
     c.fill(false);

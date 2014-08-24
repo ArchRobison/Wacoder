@@ -12,7 +12,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{ADCA6B6F-9B2A-436E-B7BD-079E31640EDA}</ProjectGuid>
-    <RootNamespace>VS2013</RootNamespace>
+    <RootNamespace>Wacoder</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -75,6 +75,7 @@
     <ClCompile Include="..\..\..\Source\AssertLib.cpp" />
     <ClCompile Include="..\..\..\Source\BuiltFromResource.cpp" />
     <ClCompile Include="..\..\..\Source\Clickable.cpp" />
+    <ClCompile Include="..\..\..\Source\FileSuffix.cpp" />
     <ClCompile Include="..\..\..\Source\Game.cpp" />
     <ClCompile Include="..\..\..\Source\HorizontalBarMeter.cpp" />
     <ClCompile Include="..\..\..\Source\Midi.cpp" />
@@ -98,6 +99,7 @@
     <ClInclude Include="..\..\..\Source\BuiltFromResource.h" />
     <ClInclude Include="..\..\..\Source\Clickable.h" />
     <ClInclude Include="..\..\..\Source\Config.h" />
+    <ClInclude Include="..\..\..\Source\FileSuffix.h" />
     <ClInclude Include="..\..\..\Source\Game.h" />
     <ClInclude Include="..\..\..\Source\HorizontalBarMeter.h" />
     <ClInclude Include="..\..\..\Source\Host.h" />

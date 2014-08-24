@@ -17,6 +17,8 @@
  OS specific services on the host that are called from OS-independent game code.
 *******************************************************************************/
 
+#include <string>
+
 //! Return current absolute time in seconds.
 /** Only the difference between two calls are meaningful, because the 
     definition of 0 is platform dependent. */
@@ -76,9 +78,8 @@ enum class GetFileNameOp {
     saveAs
 };
 
-//! Longest length of a filename on the host
-const size_t HostMaxPath = 260;
+//! Ask user for a filename.  Returns empty string on failure.
+std::string HostGetFileName(GetFileNameOp op, const char* fileType, const char* fileSuffix );
 
-//! Ask user for a filename.  Returns true on success, false otherwise.
-/** strlen(fileType)+strlen(fileSuffix) must not exceed 128. */
-bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufsize, const char* fileType, const char* fileSuffix );
+//! If program was started by clicking on a file, return the name of that file.
+std::string HostGetAssociatedFileName();

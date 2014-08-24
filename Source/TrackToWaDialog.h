@@ -53,26 +53,27 @@ public:
 	//! Set tracks entries from given tune.  Clears wack entries.
     void setFromTune( MidiTune& tune );
 
-    //! Add a wacoder.  path is the path to the .wav file.  Returns name of wacoder.
+    //! Add a wacoder to end.  path is the path to the .wav file.  Returns name of wacoder.
     std::string addWaCoder( const std::string& path );
+
+    //! Add a track to end.
+    void addTrack( const char* trackname );
 
 	//! Read dialog layout from a file, and merge information into existing track entries. 
     void clear() { 
         myItems.clear(); 
         PermutationDialog::clear();
     }
-    /** File format is sequence of lines.  Each line denotes either path to a WaCoder file or a trackname.
-	    Each track is associated with the nearest WaCoder above it.
-	    @ path1
-		trackname1
-		trackname2
-		...
-		@ path2
-		trackname1
-		trackname2
-		...
-    */
-    void readFromFile( const char* filename );
+
+    //! Invoke f(bool,string) for each item.  
+    /** For a wack, the bool is true and the string is the full path.
+        For a track, the bool is false and the string is the track name. */
+    template<typename F>
+    void forEach( F f ) const {
+        for( const trackOrWa& t: myItems )
+            f(t.isWaCoder, t.isWaCoder ? t.fullpath : t.name);
+    }
+
 	void loadTrackMap( NameToWackMap& trackMap );
 };
 

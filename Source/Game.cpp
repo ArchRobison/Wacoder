@@ -10,6 +10,7 @@
 #include <vector>
 #include <cstring>
 #include <fstream>
+#include "FileSuffix.h"
 #include "Midi.h"
 #include "Synthesizer.h"
 #include "TrackToWaDialog.h"
@@ -18,14 +19,16 @@
 #include "Widget.h"
 
 static MidiPlayer TheMidiPlayer;
-static char TheMidiTuneFileName[HostMaxPath+1];  // If [0] is zero, then not yet set
+static std::string TheMidiTuneFileName;  // If empty, then not yet set
 static MidiTune TheMidiTune;
 TrackToWaDialog TheTrackToWaDialog;
 WaPlot TheWaPlot;                               // Not static, because it is referenced in VoiceInput.cpp
 
+#if 0 /* To be deleted */
 void InitializeMidi( const char* filename ) {
     TheMidiTune.readFromFile(filename);
 }
+#endif
 
 static void MidiUpdate() {
     TheMidiPlayer.update();
@@ -56,7 +59,7 @@ static void CopyWackToWaPlot(WaPlot& plot, std::string name, const Wack& w) {
 
 static void ReadMidiTune(const char* filename) {
     if( TheMidiTune.readFromFile(filename) ) {
-        strcpy( TheMidiTuneFileName, filename );
+        TheMidiTuneFileName = filename;
         TheTrackToWaDialog.clear();
         TheTrackToWaDialog.setFromTune(TheMidiTune);
         CopyTuneToWaPlot(TheWaPlot,TheMidiTune);
@@ -75,6 +78,82 @@ const char* GameTitle() {
 #endif
 }
 
+static std::string CurrentProjectFileName;
+
+//! Open a Wacoder project file (.wacoder extension).
+/** Format of the file is as follows.  Each line has the form [mwt] .*
+    The first character denotes the type of line.
+    m: .* denotes a midi file.  This line must come first.
+    w: .* denotes a wack file.
+    t: .* denotes a MIDI track name.  (Use canonical synthetic one if track has no name) */
+static void OpenWacoderProject(const std::string& filename) {
+    if(FileSuffix(filename)!="wacoder") {
+        // Ignore files with incorrect suffix
+        return;
+    }
+    std::ifstream f(filename);
+    std::string buf;
+    while(getline(f, buf)) {
+        if(buf.size()>=3 && buf[1]==' ') {
+            const char* path = buf.c_str()+2;
+            switch(buf[0]) {
+                default:
+                    // Corrupted file
+                    Assert(0);
+                    break;
+                case 'm':
+                    ReadMidiTune(path);
+                    break;
+                case 'w':
+                    TheTrackToWaDialog.addWaCoder(path);
+                    break;
+                case 't':
+                    TheTrackToWaDialog.addTrack(path);
+                    break;
+            }
+        } else {
+            // Shortest possible line has regex 't .'.  So something is wrong.
+            Assert(0);  // Corrupt file.
+        }
+    }
+    f.close();
+    CurrentProjectFileName = filename;
+    for(auto i=TheWackMap.begin(); i!=TheWackMap.end(); ++i)
+        CopyWackToWaPlot(TheWaPlot, i->first, *i->second);
+}
+
+static void OpenWacoderProject() {
+    OpenWacoderProject( HostGetFileName(GetFileNameOp::open, "Wacoder Project", "wacoder") );
+}
+
+static void SaveWacoderProject(const std::string& filename) {
+    Assert(!TheMidiTuneFileName.empty() );
+    std::ofstream f(CurrentProjectFileName);
+    f << "m " << TheMidiTuneFileName << std::endl;
+    TheTrackToWaDialog.forEach( [&f](bool isWack, const std::string& s ) {
+        f << (isWack ? "w " : "t ");
+        f << s << std::endl;
+    });
+    f.close();
+}
+
+static void SaveWacoderProject() {
+    if( TheMidiTuneFileName.empty() )
+        // Nothing to save
+        return;
+    if( CurrentProjectFileName.empty() ) {
+        // No name for this project yet.  Get one from the user.
+        std::string s = HostGetFileName(GetFileNameOp::saveAs, "Wacoder Project", "wacoder");
+        if(s.empty()) {
+            // User cancelled
+            return;
+        }
+        CurrentProjectFileName = s;
+    }
+    SaveWacoderProject(CurrentProjectFileName);
+}
+
+
 bool GameInitialize() {
     BuiltFromResource::loadAll();
 #if 0
@@ -83,6 +162,10 @@ bool GameInitialize() {
 #if 0
     Menu::constructAll();
 #endif
+    std::string s = HostGetAssociatedFileName();
+    if( FileSuffix(s.c_str())=="wacoder" ) {
+        OpenWacoderProject(s);
+    }
     return true;
 }
 
@@ -152,13 +235,18 @@ void GameKeyDown( int key ) {
         case HOST_KEY_ESCAPE:
             HostExit();
             return;
+        case 'o'&0x1F:
+            OpenWacoderProject();
+            break;
+        case 's'&0x1F:
+            SaveWacoderProject();
+            break;;
 #if 1 // For development only 
         case 'm':  
 		    PlayTune();
             break;
         case 'n':
-            char buf[1024];
-            HostGetFileName( GetFileNameOp::create, buf, sizeof(buf), "Wacoder Project", "wacoder" );
+            std::string buf = ( GetFileNameOp::create, "Wacoder Project", "wacoder" );
             static volatile int banana=1;
             banana++;
             break;
@@ -235,7 +323,7 @@ void GameResizeOrMove( NimblePixMap& map ) {
 #if 0
     InitializeMidi("C:/tmp/midi/MoonlightSonata.mid");
 #endif
-#if 1
+#if 0
     InitializeMidi("C:/tmp/midi/the_beatles-eleanor_rigby.mid");
 #endif
 #if 0
@@ -245,47 +333,18 @@ void GameResizeOrMove( NimblePixMap& map ) {
     InitializeMidi("C:/tmp/beethoven_ode_to_joy.mid");
 #endif
 
-    TheTrackToWaDialog.setFromTune(TheMidiTune);
-    TheTrackToWaDialog.readFromFile("C:/tmp/francie.txt");
-
-    CopyTuneToWaPlot( TheWaPlot, TheMidiTune );
-
-    for( auto i=TheWackMap.begin(); i!=TheWackMap.end(); ++i ) 
-        CopyWackToWaPlot( TheWaPlot, i->first, *i->second );
-  
-}
-
-//! Get suffix to null-terminated suffix (without .) of the filename.
-/** The suffix is converted to lowercase.  Suffixes longer than 7 characters are ignored. */
-static bool GetSuffix( char suffix[8], const char* filename ) {
-    const char* s = nullptr;
-    const char* t = filename;
-    for(; *t; ++t)
-        if( *t=='.' )
-            s = t+1;
-    if( s && t-s<=7 ) {
-        // Found a suffix, and it's short enough to be interesting.
-        char* t = suffix;
-        while(*s)
-            *t++ = tolower(*s++);
-        *t++ = '\0';
-        return true;
-    } else {
-        return false;
-    }
 }
 
 void GameDroppedFile(NimblePoint where, const char* filename) {
     if( TheTrackToWaDialog.contains(where)) {
-        char suffix[8];
-        if( GetSuffix(suffix,filename) ) {
-            if( strcmp(suffix, "mid")==0 ) {
+        if( FileSuffix suffix = FileSuffix(filename) ) {
+            if( suffix=="mid" ) {
                 ReadMidiTune( filename );
-            } else if( strcmp(suffix,"wav")==0 ) {
+            } else if( suffix=="wav" ) {
                 std::string name = TheTrackToWaDialog.addWaCoder(filename);
                 CopyWackToWaPlot( TheWaPlot, name, *TheWackMap.find(name)->second );
-            } else if( strcmp(suffix,"wacoder")==0 ) {
-                // FIXME - read the wacoder file after first asking if current project should be saved
+            } else if( suffix=="wacoder" ) {
+                OpenWacoderProject(filename); 
             }
         }
 #if 0

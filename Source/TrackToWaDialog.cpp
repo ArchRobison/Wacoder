@@ -72,34 +72,19 @@ std::string TrackToWaDialog::addWaCoder(const std::string& path) {
     return t.name;
 }
 
-void TrackToWaDialog::readFromFile( const char* filename ) {
-    std::ifstream f(filename);
-    std::string buf;
-    while( getline(f,buf) ) {
-        trackOrWa t;
-        const char* ptr = buf.c_str();
-        while( *ptr && isspace(*ptr) )
-            ++ptr;
-        if( *ptr=='@' ) {
-			// Specification of a WaCoder to use.
-            addWaCoder(TrimWhiteSpace(std::string(ptr+1)));
-        } else if( *ptr ) {
-            t.name = TrimWhiteSpace(std::string(ptr));
-            t.isWaCoder = false;
-			// Check if track is defined.  If so, save track index and erase it from its current position.
-			for( auto j=myItems.begin(); j!=myItems.end(); ++j )
-				if( !j->isWaCoder && j->name==t.name ) {
-					t.index = j->index;
-					myItems.erase(j);
-			        break;
-				}
-			// Append track to end
-			myItems.push_back(t);
-        } else {
-			// Ignore blank line
-		}
-    }
-    f.close();
+void TrackToWaDialog::addTrack( const char* trackname ) {
+    trackOrWa t;
+    t.name = trackname;
+    t.isWaCoder = false;
+    // Check if track is defined.  If so, save track index and erase it from its current position.
+    for(auto j=myItems.begin(); j!=myItems.end(); ++j)
+        if(!j->isWaCoder && j->name==t.name) {
+            t.index = j->index;
+            myItems.erase(j);
+            break;
+        }
+    // Append track to end
+    myItems.push_back(t);
 }
 
 void TrackToWaDialog::loadTrackMap( NameToWackMap& trackMap ) {

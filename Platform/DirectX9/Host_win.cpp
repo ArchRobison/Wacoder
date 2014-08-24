@@ -397,15 +397,15 @@ StringBuilder& StringBuilder::append(const char* src, bool skipnull) {
     return *this;
 }
 
-bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufSize, const char* fileType, const char* fileSuffix) {
-    Assert(bufSize>0);
-    buffer[0] = 0;
+std::string HostGetFileName(GetFileNameOp op, const char* fileType, const char* fileSuffix) {
+    std::string result;
+    char buffer[MAX_PATH+1];
     OPENFILENAME ofn; 
     ZeroMemory(&ofn, sizeof(OPENFILENAME));
     ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner = MainWindowHandle;
     ofn.lpstrFile = buffer;
-    ofn.nMaxFile = bufSize;
+    ofn.nMaxFile = sizeof(buffer);
     ofn.lpstrInitialDir = nullptr;
     ofn.Flags  = OFN_EXPLORER;
     char filter[128+5];                                 //+5 is for 3 nulls and "*."
@@ -414,13 +414,19 @@ bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufSize, const char*
     ofn.lpstrFilter = filter;
     switch(op) {
         default: 
-            Assert(false);  // Not yet implemented
+            Assert(false);  // Illegal
+            break;
+        case GetFileNameOp::open:
+            ofn.lpstrTitle = "Open";
+            if( GetOpenFileName(&ofn) ) {
+                result = buffer;
+            }
             break;
         case GetFileNameOp::create:
         case GetFileNameOp::saveAs:
             ofn.lpstrTitle = op==GetFileNameOp::create ? "Create" : nullptr;
             if( GetSaveFileName(&ofn) ) {
-                return true;
+                result = buffer;
             } else {
 #if 0
                 // Sometimes helpfule for debugging.
@@ -435,7 +441,7 @@ bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufSize, const char*
             }
             break;
     }
-    return false;
+    return result;
 }
 
 static bool InitializeDirectX( HWND hwnd ) {
@@ -574,6 +580,28 @@ const char* HostGetCommonAppData( const char*pathSuffix ) {
         }
         return path;
     } 
+}
+
+static const char* OriginalCommandLine;
+
+std::string HostGetAssociatedFileName() {
+    std::string result;
+    int argc;
+    wchar_t** argv = CommandLineToArgvW( GetCommandLineW(), &argc );
+    if( argc>1 ) {
+        size_t n = wcslen(argv[1]);
+        result.resize(wcslen(argv[1]));
+        for(size_t i=0; i<n; ++i) {
+            unsigned c = argv[1][i];
+            if(c>=128) {
+                // FIXME - support wide-char filenames
+                result.resize(0);
+                break;
+            }
+            result[i] = argv[1][i];
+        }
+    }
+    return result;
 }
 
 int WINAPI WinMain( HINSTANCE hinstance,
