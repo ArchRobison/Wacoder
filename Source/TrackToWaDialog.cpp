@@ -36,9 +36,10 @@ static std::string TrimWhiteSpace( const std::string& s ) {
     return std::string(s,i,j-i);
 }
 
+// Return filename with any drive prefix, directory prefix, or extension suffix removed.
 static std::string GetSimpleName( const std::string& s ) {
     size_t j = s.find_last_of('.');
-    size_t i = s.find_last_of(":/");
+    size_t i = s.find_last_of(":/\\");
     i = i>=s.size() ? 0 : i+1;
     j = j<i ? s.size() : j;
     return s.substr(i,j-i);
@@ -61,6 +62,16 @@ void TrackToWaDialog::setFromTune( MidiTune& tune ) {
     }
 }
 
+std::string TrackToWaDialog::addWaCoder(const std::string& path) {
+    trackOrWa t;
+    t.fullpath = path;
+    t.name = GetSimpleName(path);
+    t.isWaCoder = true;
+    myItems.push_back(t);
+    LoadWaCoder(t.name, t.fullpath);
+    return t.name;
+}
+
 void TrackToWaDialog::readFromFile( const char* filename ) {
     std::ifstream f(filename);
     std::string buf;
@@ -71,10 +82,7 @@ void TrackToWaDialog::readFromFile( const char* filename ) {
             ++ptr;
         if( *ptr=='@' ) {
 			// Specification of a WaCoder to use.
-            t.fullpath = TrimWhiteSpace(std::string(ptr+1));
-            t.name = GetSimpleName(t.fullpath);
-            t.isWaCoder = true;
-            myItems.push_back(t);
+            addWaCoder(TrimWhiteSpace(std::string(ptr+1)));
         } else if( *ptr ) {
             t.name = TrimWhiteSpace(std::string(ptr));
             t.isWaCoder = false;
@@ -92,12 +100,6 @@ void TrackToWaDialog::readFromFile( const char* filename ) {
 		}
     }
     f.close();
-}
-
-void TrackToWaDialog::loadWaCoders() {
-	for( auto i=myItems.begin(); i!=myItems.end(); ++i )
-		if( i->isWaCoder )
-			LoadWaCoder( i->name, i->fullpath );
 }
 
 void TrackToWaDialog::loadTrackMap( NameToWackMap& trackMap ) {

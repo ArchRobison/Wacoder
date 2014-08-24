@@ -47,14 +47,17 @@ private:
 //! Tune read from a MIDI file/resource.
 class MidiTune {
 public:
-    MidiTune() {}
+    MidiTune() {myReadStatus[0] = 0;}
     ~MidiTune() {clear();}
-    void readFromFile( const char* filename );
+    //! Returns true if successful, false otherwise.
+    bool readFromFile( const char* filename );
+    //! Description of why last read failed, or "" if successful.
+    const char* readStatus() const {return myReadStatus;}
     void clear();
     //! Assign new MIDI data.
     //! Return number of tracks
     size_t nTrack() const {return myTrack.size();}
-    const MidiTrack& operator[]( size_t i ) {
+    const MidiTrack& operator[]( size_t i ) const {
         return myTrack[i];
     }
     float tickPerSec() const {return myTickPerSec;}
@@ -62,8 +65,10 @@ private:
     friend class MidiPlayer;
     SimpleArray<MidiTrack> myTrack;
     float myTickPerSec;
+    void noteError( const char* format, unsigned value=0 );
+    char myReadStatus[64];
     /** The data is copied, so it's safe to free [first,last) afterwards. */
-    void assign( const byte* first, const byte* last );
+    void assign(const byte* first, const byte* last);
 };
 
 #define MIDI_META(x) ((x)+0x10)

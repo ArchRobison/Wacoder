@@ -1,4 +1,4 @@
-/* Copyright 1996-2010 Arch D. Robison 
+/* Copyright 1996-2014 Arch D. Robison 
 
    Licensed under the Apache License, Version 2.0 (the "License"); 
    you may not use this file except in compliance with the License. 
@@ -57,6 +57,12 @@ const size_t GameSamplesPerSec = 44100;
 typedef short GameSoundSample;
 void GamePlaySound( GameSoundSample* begin, size_t length, float relativePitch );
 #endif /* HAVE_SOUND */
+
+#define HAVE_DRAG_DROP 1
+
+#if HAVE_DRAG_DROP
+void GameDroppedFile(NimblePoint where, const char* filename);
+#endif
 
 #if HAVE_GAME_FILES
 

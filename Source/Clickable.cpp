@@ -87,8 +87,16 @@ static void Hueify( NimblePixMap& map, Hue hue ) {
     }
 }
 
-PermutationDialog::PermutationDialog( int width, int height ) : myAccented(-1), mySelected(-1), myInsertPoint(-1), myMouseDown(false) {
+PermutationDialog::PermutationDialog( int width, int height ) {
+    clear();
     setClickableSize(width,height);
+}
+
+void PermutationDialog::clear() {
+    myAccented = -1;
+    mySelected = -1;
+    myInsertPoint = -1;
+    myMouseDown = false;
     myRowHeight = 0;
 }
 

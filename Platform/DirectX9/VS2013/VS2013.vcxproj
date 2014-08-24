@@ -93,6 +93,31 @@
   <ItemGroup>
     <ResourceCompile Include="..\..\..\Resource\resource.rc" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\Source\AssertLib.h" />
+    <ClInclude Include="..\..\..\Source\BuiltFromResource.h" />
+    <ClInclude Include="..\..\..\Source\Clickable.h" />
+    <ClInclude Include="..\..\..\Source\Config.h" />
+    <ClInclude Include="..\..\..\Source\Game.h" />
+    <ClInclude Include="..\..\..\Source\HorizontalBarMeter.h" />
+    <ClInclude Include="..\..\..\Source\Host.h" />
+    <ClInclude Include="..\..\..\Source\Hue.h" />
+    <ClInclude Include="..\..\..\Source\LinearTransform1D.h" />
+    <ClInclude Include="..\..\..\Source\Midi.h" />
+    <ClInclude Include="..\..\..\Source\NimbleDraw.h" />
+    <ClInclude Include="..\..\..\Source\NimbleSound.h" />
+    <ClInclude Include="..\..\..\Source\NonblockingQueue.h" />
+    <ClInclude Include="..\..\..\Source\PoolAllocator.h" />
+    <ClInclude Include="..\..\..\Source\SmallMark.h" />
+    <ClInclude Include="..\..\..\Source\StartupList.h" />
+    <ClInclude Include="..\..\..\Source\Synthesizer.h" />
+    <ClInclude Include="..\..\..\Source\TraceLib.h" />
+    <ClInclude Include="..\..\..\Source\TrackToWaDialog.h" />
+    <ClInclude Include="..\..\..\Source\Utility.h" />
+    <ClInclude Include="..\..\..\Source\Wack.h" />
+    <ClInclude Include="..\..\..\Source\WaPlot.h" />
+    <ClInclude Include="..\..\..\Source\Widget.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

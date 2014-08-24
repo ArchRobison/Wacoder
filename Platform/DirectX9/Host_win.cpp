@@ -31,7 +31,10 @@
 #include <Ole2.h>
 #include <gdiplus.h>
 #include <ShlObj.h>
+#include <Shellapi.h>
 #include <stdio.h>
+#include <Commdlg.h>
+#include <cderr.h>
 #include "AssertLib.h"
 #include "BuiltFromResource.h"
 #include "Config.h"
@@ -194,6 +197,27 @@ static LRESULT CALLBACK WindowProc(HWND hwnd,
             GameKeyDown(wparam);
             return 0;
 
+#if HAVE_DRAG_DROP
+        case WM_DROPFILES: {
+            HDROP hDrop = (HDROP)wparam;
+            POINT point;
+            if( DragQueryPoint(hDrop,&point) ) {
+                NimblePoint p;
+                p.x = point.x;
+                p.y = point.y;
+                UINT n = DragQueryFile(hDrop, ~0U, nullptr, 0u);
+                for(unsigned i=0; i<n; ++i) {
+                    char buffer[MAX_PATH+2];
+                    UINT m = DragQueryFile(hDrop, i, buffer, sizeof(buffer));
+                    if( m<=MAX_PATH ) {
+                        GameDroppedFile( p, buffer );
+                    }
+                }
+            }
+            DragFinish(hDrop);
+            return 0;
+        }
+#endif
         default:
             break;
 
@@ -356,6 +380,62 @@ void HostSetFrameIntervalRate( int limit ) {
                                    limit==1 ? D3DPRESENT_INTERVAL_DEFAULT : 
                                               D3DPRESENT_INTERVAL_TWO;
     Device->Reset(&present);
+}
+
+class StringBuilder {
+    char* ptr;
+public:
+    StringBuilder( char * dst ) : ptr(dst) {}
+    StringBuilder& append( const char* src, bool skipnull=false );
+};
+
+StringBuilder& StringBuilder::append(const char* src, bool skipnull) {
+    while( *ptr = *src++ )
+        ++ptr;
+    if( skipnull ) 
+        ++ptr;
+    return *this;
+}
+
+bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufSize, const char* fileType, const char* fileSuffix) {
+    Assert(bufSize>0);
+    buffer[0] = 0;
+    OPENFILENAME ofn; 
+    ZeroMemory(&ofn, sizeof(OPENFILENAME));
+    ofn.lStructSize = sizeof(OPENFILENAME);
+    ofn.hwndOwner = MainWindowHandle;
+    ofn.lpstrFile = buffer;
+    ofn.nMaxFile = bufSize;
+    ofn.lpstrInitialDir = nullptr;
+    ofn.Flags  = OFN_EXPLORER;
+    char filter[128+5];                                 //+5 is for 3 nulls and "*."
+    Assert(strlen(fileType)+strlen(fileSuffix)+3 <= sizeof(filter));
+    StringBuilder(filter).append(fileType,true).append("*.").append(fileSuffix,true).append(""); 
+    ofn.lpstrFilter = filter;
+    switch(op) {
+        default: 
+            Assert(false);  // Not yet implemented
+            break;
+        case GetFileNameOp::create:
+        case GetFileNameOp::saveAs:
+            ofn.lpstrTitle = op==GetFileNameOp::create ? "Create" : nullptr;
+            if( GetSaveFileName(&ofn) ) {
+                return true;
+            } else {
+#if 0
+                // Sometimes helpfule for debugging.
+                DWORD x = CommDlgExtendedError();
+                switch(x) {
+                    case CDERR_DIALOGFAILURE:
+                        break;
+                    case CDERR_INITIALIZATION:
+                        break;
+                }
+#endif
+            }
+            break;
+    }
+    return false;
 }
 
 static bool InitializeDirectX( HWND hwnd ) {
@@ -596,6 +676,10 @@ int WINAPI WinMain( HINSTANCE hinstance,
     fprintf(LogFile,"loaded resource bitmap\n");
     fflush(LogFile);
 #endif /* CREATE_LOG */
+
+#if HAVE_DRAG_DROP
+    DragAcceptFiles(hwnd,true);
+#endif /* HAVE_DRAG_DROP */
 
     // Enter main event loop
     for(;;) {

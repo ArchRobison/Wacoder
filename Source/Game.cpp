@@ -18,8 +18,10 @@
 #include "Widget.h"
 
 static MidiPlayer TheMidiPlayer;
+static char TheMidiTuneFileName[HostMaxPath+1];  // If [0] is zero, then not yet set
 static MidiTune TheMidiTune;
 TrackToWaDialog TheTrackToWaDialog;
+WaPlot TheWaPlot;                               // Not static, because it is referenced in VoiceInput.cpp
 
 void InitializeMidi( const char* filename ) {
     TheMidiTune.readFromFile(filename);
@@ -29,7 +31,41 @@ static void MidiUpdate() {
     TheMidiPlayer.update();
 }
 
-WaPlot TheWaPlot;
+static void CopyTuneToWaPlot(WaPlot& plot, const MidiTune& tune) {
+    plot.clear();
+    float timeScale = 1/tune.tickPerSec();
+    for(size_t i=0; i<tune.nTrack(); ++i) {
+        MidiTrackReader mtr;
+        for(mtr.setTrack(tune[i]); mtr.event()!=MEK_EndOfTrack; mtr.next()) {
+            switch(mtr.event()) {
+                case MEK_NoteOn: {
+                    MidiTrackReader::futureEvent fe = mtr.findNextOffOrOn();
+                    plot.insertNote(mtr.pitch(), fe.time*timeScale, mtr.velocity(), i);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+static void CopyWackToWaPlot(WaPlot& plot, std::string name, const Wack& w) {
+    auto waId = TheWaPlot.getWackId(name);
+    for(size_t j=0; j<w.size(); ++j)
+        plot.insertWa(w[j].freq, w[j].duration, waId);
+}
+
+static void ReadMidiTune(const char* filename) {
+    if( TheMidiTune.readFromFile(filename) ) {
+        strcpy( TheMidiTuneFileName, filename );
+        TheTrackToWaDialog.clear();
+        TheTrackToWaDialog.setFromTune(TheMidiTune);
+        CopyTuneToWaPlot(TheWaPlot,TheMidiTune);
+        // FIXME - update the  waplot...
+    } else {
+        // FIXME - HostWarning will exit
+        HostWarning(TheMidiTune.readStatus());
+    }
+}
 
 const char* GameTitle() {
 #if ASSERTIONS
@@ -111,19 +147,23 @@ void GameMouseMove( const NimblePoint& point ) {
 		(*c)->mouseMove(point);
 }
 
-bool BananaFlag;
-
 void GameKeyDown( int key ) {
-    if( key==HOST_KEY_ESCAPE ) {
-        HostExit();
-        return;
+    switch(key) {
+        case HOST_KEY_ESCAPE:
+            HostExit();
+            return;
+#if 1 // For development only 
+        case 'm':  
+		    PlayTune();
+            break;
+        case 'n':
+            char buf[1024];
+            HostGetFileName( GetFileNameOp::create, buf, sizeof(buf), "Wacoder Project", "wacoder" );
+            static volatile int banana=1;
+            banana++;
+            break;
     }
-    if( key=='m' ) {
-		PlayTune();
-	}
-	if( key==',' ) {
-		BananaFlag = 1;
-    }
+#endif
 }
 
 unsigned Counter;
@@ -146,13 +186,9 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
 #endif
     }
     if( request & NimbleDraw ) {
-		extern bool BananaFlag;
         ClickableSetEnd = ClickableSet;
         int x = screen.width()-ThePlayButton.width()-TheRecordButton.width()-InputVolumeMeter.width();
         TheWaPlot.setWindowSize(x,screen.height());
-		if( BananaFlag ) {
-			BananaFlag = 2;
-		}
         TheWaPlot.setTrackHues(TheTrackToWaDialog.hilightedTracks());
         TheWaPlot.setWackHues( HueMap( []( Hue h ) -> int {
             if( auto* s = TheTrackToWaDialog.hilightedWack(h) ) 
@@ -163,7 +199,7 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
         DrawClickable( TheWaPlot, screen, 0, 0 );
         DrawClickable( TheTrackToWaDialog, screen, x, InputVolumeMeter.height() );
         extern float VoicePeak;
-         InputVolumeMeter.setLevel(Min(1.0f,VoicePeak));
+        InputVolumeMeter.setLevel(Min(1.0f,VoicePeak));
         InputVolumeMeter.drawOn( screen, x, 0 );
         x += InputVolumeMeter.width();
         DrawClickable( ThePlayButton, screen, x, 0 );
@@ -197,7 +233,7 @@ void GameResizeOrMove( NimblePixMap& map ) {
     InitializeMidi("C:/tmp/SimpleScale.mid");
 #endif
 #if 0
-    InitializeMidi("C:/tmp/MoonlightSonata.mid");
+    InitializeMidi("C:/tmp/midi/MoonlightSonata.mid");
 #endif
 #if 1
     InitializeMidi("C:/tmp/midi/the_beatles-eleanor_rigby.mid");
@@ -211,26 +247,52 @@ void GameResizeOrMove( NimblePixMap& map ) {
 
     TheTrackToWaDialog.setFromTune(TheMidiTune);
     TheTrackToWaDialog.readFromFile("C:/tmp/francie.txt");
-	TheTrackToWaDialog.loadWaCoders();
 
-    float timeScale = 1/TheMidiTune.tickPerSec();
-    for( size_t i=0; i<TheMidiTune.nTrack(); ++i ) {
-        MidiTrackReader mtr;
-        for( mtr.setTrack(TheMidiTune[i]); mtr.event()!=MEK_EndOfTrack; mtr.next() ) {
-            switch( mtr.event() ) {
-                case MEK_NoteOn: {
-                    MidiTrackReader::futureEvent fe = mtr.findNextOffOrOn();
-                    TheWaPlot.insertNote( mtr.pitch(), fe.time*timeScale, mtr.velocity(), i );
-                    break;
-                }
+    CopyTuneToWaPlot( TheWaPlot, TheMidiTune );
+
+    for( auto i=TheWackMap.begin(); i!=TheWackMap.end(); ++i ) 
+        CopyWackToWaPlot( TheWaPlot, i->first, *i->second );
+  
+}
+
+//! Get suffix to null-terminated suffix (without .) of the filename.
+/** The suffix is converted to lowercase.  Suffixes longer than 7 characters are ignored. */
+static bool GetSuffix( char suffix[8], const char* filename ) {
+    const char* s = nullptr;
+    const char* t = filename;
+    for(; *t; ++t)
+        if( *t=='.' )
+            s = t+1;
+    if( s && t-s<=7 ) {
+        // Found a suffix, and it's short enough to be interesting.
+        char* t = suffix;
+        while(*s)
+            *t++ = tolower(*s++);
+        *t++ = '\0';
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void GameDroppedFile(NimblePoint where, const char* filename) {
+    if( TheTrackToWaDialog.contains(where)) {
+        char suffix[8];
+        if( GetSuffix(suffix,filename) ) {
+            if( strcmp(suffix, "mid")==0 ) {
+                ReadMidiTune( filename );
+            } else if( strcmp(suffix,"wav")==0 ) {
+                std::string name = TheTrackToWaDialog.addWaCoder(filename);
+                CopyWackToWaPlot( TheWaPlot, name, *TheWackMap.find(name)->second );
+            } else if( strcmp(suffix,"wacoder")==0 ) {
+                // FIXME - read the wacoder file after first asking if current project should be saved
             }
         }
-    }
-    for( auto i=TheWackMap.begin(); i!=TheWackMap.end(); ++i ) {
-        const Wack& w = *i->second;
-		auto waId = TheWaPlot.getWackId(i->first);
-        for( size_t j=0; j<w.size(); ++j )
-            TheWaPlot.insertWa( w[j].freq, w[j].duration, waId );
+#if 0
+       if a .wav file (use case-insensitive comparison), treat it as a set of was.  Insert in permutation dialog where dropped.
+       if a .mid file (use case-insensitive comparison), treat as new midi to play.  Reassign old was based on closest match to average pitch of track.
+       if a .wacoder file, treat as a new track to wa mapping.
+#endif
     }
 }
 

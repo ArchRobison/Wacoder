@@ -10,14 +10,15 @@
 class Wack;
 
 class TrackToWaDialog: public PermutationDialog {
+    //! A track or a wacoder.
     struct trackOrWa {
         bool isWaCoder;
-        //! If a track, the index of the track within the tune.
+        //! If a track, the index of the track within the tune.  -1 for wacoders.
         short index;
         Wack* waCoder;
 		//! Name that appears in dialog - either name of track or name of WaCoder
         std::string name;
-		//! If a WaCoder, full path to WaCoder input file
+		//! If a WaCoder, full path to WaCoder input file.  Empty tracks.
         std::string fullpath;
         trackOrWa() : waCoder(NULL), isWaCoder(false), index(-1) {}
     };
@@ -48,10 +49,19 @@ public:
     }
 	//! If a wack is highlighted, return a pointer to a string with its name.  Otherwise return NULL.
     const std::string* hilightedWack( Hue h ) const;
-	//! Set tracks entries from given tune.
+
+	//! Set tracks entries from given tune.  Clears wack entries.
     void setFromTune( MidiTune& tune );
+
+    //! Add a wacoder.  path is the path to the .wav file.  Returns name of wacoder.
+    std::string addWaCoder( const std::string& path );
+
 	//! Read dialog layout from a file, and merge information into existing track entries. 
-	/** File format is sequence of lines.  Each line denotes either path to a WaCoder file or a trackname.
+    void clear() { 
+        myItems.clear(); 
+        PermutationDialog::clear();
+    }
+    /** File format is sequence of lines.  Each line denotes either path to a WaCoder file or a trackname.
 	    Each track is associated with the nearest WaCoder above it.
 	    @ path1
 		trackname1
@@ -63,7 +73,6 @@ public:
 		...
     */
     void readFromFile( const char* filename );
-	void loadWaCoders();
 	void loadTrackMap( NameToWackMap& trackMap );
 };
 

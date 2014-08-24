@@ -1,4 +1,4 @@
-/* Copyright 1996-2012 Arch D. Robison 
+/* Copyright 1996-2014 Arch D. Robison 
 
    Licensed under the Apache License, Version 2.0 (the "License"); 
    you may not use this file except in compliance with the License. 
@@ -69,3 +69,16 @@ const char* HostGetCommonAppData( const char* pathSuffix );
 
 //! Print warning message.  Current Windows implementation does not return.
 void HostWarning( const char* message );
+
+enum class GetFileNameOp {
+    create,
+    open,
+    saveAs
+};
+
+//! Longest length of a filename on the host
+const size_t HostMaxPath = 260;
+
+//! Ask user for a filename.  Returns true on success, false otherwise.
+/** strlen(fileType)+strlen(fileSuffix) must not exceed 128. */
+bool HostGetFileName(GetFileNameOp op, char* buffer, size_t bufsize, const char* fileType, const char* fileSuffix );

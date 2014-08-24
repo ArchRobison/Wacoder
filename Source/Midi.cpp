@@ -249,7 +249,8 @@ static void ByteSwap( MidiTrackHeader& t ) {
 template<typename H>
 static const byte* readHeader( H& h, const byte* first, const byte* last, const char* id ) {
     Assert( H::headerSize<=sizeof(H) );
-    Assert( memcmp(first, id, 4)==0 );
+    if( memcmp(first, id, 4)!=0 )
+        return nullptr;
     Assert( last-first>=H::headerSize );
     memcpy( &h, first, H::headerSize );
     first += H::headerSize;
@@ -261,26 +262,36 @@ static const byte* readHeader( H& h, const byte* first, const byte* last, const 
 // MidiTune
 //-----------------------------------------------------------------
 
+void MidiTune::noteError( const char* format, unsigned value ) {
+    Assert(strlen(format) + 8 <= sizeof(myReadStatus) );
+    sprintf(myReadStatus,format,value);
+}
+
 void MidiTune::clear() {
     myTrack.clear();
 }
 
-void MidiTune::assign( const byte* first, const byte* last ) {
+void MidiTune::assign(const byte* first, const byte* last) {
     clear();
     // Read header
     MidiHeader h;
     first = readHeader(h,first,last,"MThd");
+    if(!first) 
+        return noteError("bad MThd header");
     Assert( h.format<=1 );
     Assert( h.chunkSize==6 );
-    if( h.format==0 )
-        Assert( h.numTracks==1 );
-    else
-        Assert( h.numTracks>=1 );
-    if( h.division&0x8000 ) {
-        Assert( 0&&"SMTPE not implemented");
+    if( h.format==0 ) {
+        if( h.numTracks!=1 ) 
+            return noteError("format 0 must have one track, not %u tracks", h.numTracks);
     } else {
-        myTickPerSec = 2*float(h.division);    // 120 beats per minute
+        if( h.numTracks<=0 ) {
+            return noteError("nonzero format 0 shold have at least one track");
+        }
     }
+    if( h.division&0x8000 ) 
+        return noteError("SMTPE not implemented");
+    else 
+        myTickPerSec = 2*float(h.division);    // 120 beats per minute
 
     // Allocate trackDesc structures
     myTrack.resize(h.numTracks);
@@ -288,14 +299,20 @@ void MidiTune::assign( const byte* first, const byte* last ) {
     for( unsigned i=0; i<h.numTracks; ++i ) {
         MidiTrackHeader t;
         first = readHeader(t,first,last,"MTrk");
+        if( !first ) 
+            return noteError("track %u has bad MTrk header", i);
         myTrack[i].data.assign( first, t.chunkSize );
         first += t.chunkSize;
     }
 }
 
-void MidiTune::readFromFile( const char* filename ) {
+bool MidiTune::readFromFile( const char* filename ) {
+    myReadStatus[0] = 0;
     FILE* f = fopen(filename,"rb");
-    Assert(f);	// FIXME - recover from missing file
+    if( !f ) {
+        noteError("cannot open file");
+        return false;
+    }
     fseek(f,0,SEEK_END);
     long fsize = ftell(f);
     fseek(f,0,SEEK_SET);
@@ -304,9 +321,11 @@ void MidiTune::readFromFile( const char* filename ) {
     long s = fread(buf,1,fsize,f);
     fclose(f);
     Assert( s==fsize );
+    bool result = false;
     if( s>=0 )
         assign(buf,buf+s);
     delete[] buf;
+    return myReadStatus[0]==0;
 }
 
 //-----------------------------------------------------------------
@@ -458,7 +477,7 @@ void AdditiveInstrument::stop() {
         release(i);
 }
 
-NameToWackMap TheWackMap;    //!< Map from filenames to WaCoders. 
+NameToWackMap TheWackMap;    //!< Map from ids (e.g. "adr-oom" to WaCoders. 
 
 void LoadWaCoder( const std::string id, const std::string path ) {
 	auto i = TheWackMap.insert( std::make_pair(id,(const Wack*)NULL)).first;
@@ -466,7 +485,6 @@ void LoadWaCoder( const std::string id, const std::string path ) {
 		i->second = new Wack(path);
 	}
 }
-
 
 #if 0 /* Is this code used any more? */
 

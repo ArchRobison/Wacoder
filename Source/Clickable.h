@@ -84,6 +84,7 @@ public:
         Assert(h==HueAccented||h==HueSelected);
         return h==HueAccented ? myAccented : mySelected;
     }
+    virtual void clear();
 private:
     void doDrawOn( NimblePixMap& map );
 	void doMouseDown( NimblePoint p );
