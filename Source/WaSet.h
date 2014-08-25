@@ -1,5 +1,5 @@
-#ifndef Wack_H
-#define Wack_H
+#ifndef WaSet_H
+#define WaSet_H
 
 #include "Synthesizer.h"
 #include "Midi.h"
@@ -15,18 +15,25 @@ struct Wa {
 };
 
 //! A collection of Was
-class Wack: NoCopy {
+class WaSet: NoCopy {
 public:
-    Wack( const std::string& filename );
-    //! Name used to construct this Wack
+    //! Construct WaSet from given .wav file of was.
+    WaSet( const std::string& filename );
+
+    //! Name used to construct this WaSet
     const std::string& name() const {return myFileName;}
+
     //! Find closest match Wa
     const Wa* lookup( float pitch, float duration ) const;
-    //! Number of Was
-    size_t size() const {return myArray.size();}
-    //! Return kth Wa
-    const Wa& operator[](size_t k) const {return myArray[k];}
+
+    //! Apply f to each Wa
+    template<typename F>
+    void forEach(F f) const {
+        for( const Wa& w: myArray )
+            f(w);
+    }
 #if HAVE_WriteWaPlot
+    // For debugging
     void writeWaPlot( const char* filename ) const;
 #endif
 private:
@@ -38,13 +45,13 @@ class WaInstrument: public MidiInstrument {
     /*override*/ void processEvent();
     /*override*/ void stop();
     const double myTickPerSec;
-    const Wack& myWaCoder;
+    const WaSet& myWaCoder;
 public:
-    WaInstrument( double tickPerSec, const Wack& wc ) : myTickPerSec(tickPerSec), myWaCoder(wc) {}
+    WaInstrument( double tickPerSec, const WaSet& wc ) : myTickPerSec(tickPerSec), myWaCoder(wc) {}
 };
 
 #if HAVE_WriteWaPlot
 void WriteWaPlot( const char* filename, const MidiTrack& track, double ticksPerSec );
 #endif
 
-#endif /* Wack_H */
+#endif /* WaSet_H */

@@ -61,7 +61,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\..\Source;C:\Program Files (x86)\Intel\Composer XE 2013 SP1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;ASSERTIONS=0</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -86,8 +86,8 @@
     <ClCompile Include="..\..\..\Source\TraceLib.cpp" />
     <ClCompile Include="..\..\..\Source\TrackToWaDialog.cpp" />
     <ClCompile Include="..\..\..\Source\VoiceInput.cpp" />
-    <ClCompile Include="..\..\..\Source\Wack.cpp" />
     <ClCompile Include="..\..\..\Source\WaPlot.cpp" />
+    <ClCompile Include="..\..\..\Source\WaSet.cpp" />
     <ClCompile Include="..\..\..\Source\Widget.cpp" />
     <ClCompile Include="..\Host_win.cpp" />
   </ItemGroup>
@@ -116,8 +116,8 @@
     <ClInclude Include="..\..\..\Source\TraceLib.h" />
     <ClInclude Include="..\..\..\Source\TrackToWaDialog.h" />
     <ClInclude Include="..\..\..\Source\Utility.h" />
-    <ClInclude Include="..\..\..\Source\Wack.h" />
     <ClInclude Include="..\..\..\Source\WaPlot.h" />
+    <ClInclude Include="..\..\..\Source\WaSet.h" />
     <ClInclude Include="..\..\..\Source\Widget.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

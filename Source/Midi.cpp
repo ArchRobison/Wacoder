@@ -16,7 +16,7 @@
 #include "Midi.h"
 #include "Host.h"
 #include "Synthesizer.h"
-#include "Wack.h"
+#include "WaSet.h"
 #include <cstring>
 #include <algorithm>
 
@@ -350,7 +350,7 @@ KeySoundInit::KeySoundInit() {
         MidiKeyWave[i] = 0;
 #if 1
     // Organ
-    float phase = 0;
+    double phase = 0;
     for( int h=1; h<=19; h+=2 ) {
         for( int i=0; i<keyLength; ++i ) {
             double omega = 2*pi/keyLength;
@@ -450,6 +450,9 @@ void AdditiveInstrument::release( int note ) {
 void AdditiveInstrument::processEvent() {
     switch( event() ) {
         case MEK_NoteOn: {
+            if( velocity()==0 ) 
+                // Some MIDI files use "Note On" with velocity of zero to indicate "Note off".
+                goto off;
             int n = note() & 0x7F;
             if( keyArray[n] ) {
                 // "Moonlight Sonata" file seems to have two "NoteOn" without intervening "NoteOff"
@@ -457,11 +460,14 @@ void AdditiveInstrument::processEvent() {
                 release(n);
             }
             attack(n);
+#if ASSERTIONS
             ++onLevel[n];
+#endif
             break;
         }
+        off:
         case MEK_NoteOff: {
-            int n = note();
+            int n = note()& 0x7F;
             release(n);
             Assert(onLevel[n]>0);
 #if ASSERTIONS
@@ -477,21 +483,21 @@ void AdditiveInstrument::stop() {
         release(i);
 }
 
-NameToWackMap TheWackMap;    //!< Map from ids (e.g. "adr-oom" to WaCoders. 
+NameToWaSetMap TheWaSetMap;    //!< Map from ids (e.g. "adr-oom" to WaCoders. 
 
 void LoadWaCoder( const std::string id, const std::string path ) {
-	auto i = TheWackMap.insert( std::make_pair(id,(const Wack*)NULL)).first;
+	auto i = TheWaSetMap.insert( std::make_pair(id,(const WaSet*)NULL)).first;
 	if( !i->second ) {
-		i->second = new Wack(path);
+		i->second = new WaSet(path);
 	}
 }
 
 #if 0 /* Is this code used any more? */
 
-static const Wack* GetWaCoder( const std::string& filename ) {
-    auto i = TheWackMap.insert( std::make_pair(filename,(const Wack*)NULL)).first;
+static const WaSet* GetWaCoder( const std::string& filename ) {
+    auto i = TheWaSetMap.insert( std::make_pair(filename,(const WaSet*)NULL)).first;
     if( !i->second ) {
-        i->second = new Wack(filename);
+        i->second = new WaSet(filename);
     }
     return i->second;
 }
@@ -501,6 +507,9 @@ static const Wack* GetWaCoder( const std::string& filename ) {
 // MidiPlayer
 //-----------------------------------------------------------------
 
+#define MIDI_LOG 0
+
+#if MIDI_LOG
 static FILE* TheLogFile;
 
 static void OpenLogFile() {
@@ -508,6 +517,7 @@ static void OpenLogFile() {
         TheLogFile = fopen("C:/tmp/midi.log","w");
     }
 }
+#endif
 
 void MidiPlayer::stop() {
     for( auto ip = myEnsemble.begin(); ip!=myEnsemble.end(); ++ip ) {
@@ -533,11 +543,13 @@ std::string MidiTrack::trackId( int k ) const {
     return id;
 }
 
-void MidiPlayer::play( const MidiTune& tune, const NameToWackMap& trackMap ) {
+void MidiPlayer::play( const MidiTune& tune, const NameToWaSetMap& trackMap ) {
     myZeroTime = 0;
     myTickPerSec = tune.myTickPerSec;
     Assert(myTickPerSec>0);
+#if MIDI_LOG
     OpenLogFile();
+#endif
     Assert( myEnsemble.empty() );
     int k = 0;
     for( size_t i=0; i<tune.myTrack.size(); ++i ) {
@@ -557,14 +569,18 @@ void MidiPlayer::play( const MidiTune& tune, const NameToWackMap& trackMap ) {
 #endif
                 it = new WaInstrument(myTickPerSec,*j->second);
             } else {
+#if MIDI_LOG
                 fprintf( TheLogFile, "%s: (additive)\n",id.c_str());
+#endif
                 it = new AdditiveInstrument();
             }
             it->setTrack( tune.myTrack[i] );
             myEnsemble.push_back(it);
         }
     }
+#if MIDI_LOG
     fflush(TheLogFile);
+#endif
 }
 
 void MidiPlayer::update() {
@@ -580,8 +596,8 @@ void MidiPlayer::update() {
         myZeroTime=currentTime;
     // Convert to MIDI time
     MidiTrackReader::timeType t = MidiTrackReader::timeType((currentTime-myZeroTime)*myTickPerSec);
-    for( auto ip = myEnsemble.begin(); ip!=myEnsemble.end(); ++ip ) {
-        MidiInstrument& i = **ip;
+    for( MidiInstrument*ip : myEnsemble) {
+        MidiInstrument& i = *ip;
         // Update track i 
         while( i.event()!=MEK_EndOfTrack && i.time()<=t ) {
             i.processEvent();
@@ -589,33 +605,3 @@ void MidiPlayer::update() {
         }
     }
 }
-
-#if 0 /* To be removed */
-static std::string TrimWhiteSpace( const std::string& s ) {
-    size_t i = 0;
-    while( i<s.size() && isspace(s[i]) )
-        ++i;
-    size_t j=s.size();
-    while( i<j && isspace(s[j-1]) )
-        --j;
-    return std::string(s,i,j-i);
-}
-
-void InitializeMidiWa() {
-    FILE* f = fopen("C:/tmp/francie.txt","r");
-    char buf[1024];
-    const Wack* w = NULL;
-    while( fgets(buf,sizeof(buf),f) ) {
-        const char* ptr = buf;
-        while( *ptr && isspace(*ptr) )
-            ++ptr;
-        if( *ptr=='@' ) {
-            w = GetWaCoder( TrimWhiteSpace(std::string(ptr+1)) );
-        } else if( *ptr ) {
-            Assert(w);
-            TheTrackMap.insert( std::make_pair( TrimWhiteSpace(std::string(ptr)), w ));
-        }
-    }
-    fclose(f);
-}
-#endif

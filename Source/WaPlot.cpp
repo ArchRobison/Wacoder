@@ -33,6 +33,10 @@ static SmallMarkCache CrossMarkCache(&SmallMark::makeCross);
 static SmallMarkCache FatCrossMarkCache(&CrossMarkCache);
 
 void WaPlot::waPoint::setFromPitchAndDuration( float pitch, float duration ) {
+    // Zero behaves badly on log scale, bound duration from below.
+    const float minDuration = 1.0f/120;
+    if(duration<minDuration)
+        duration = minDuration;
     x = std::log(pitch*duration);
     y = std::log(pitch);
 }
@@ -115,21 +119,21 @@ void WaPlot::insertNote( float pitch, float duration, int velocity, int trackId 
     rLimit.include(c.r);
 }
 
-void WaPlot::insertWa( float pitch, float duration, int wackId ) {
-	Assert(unsigned(wackId)<myWas.maxId);
+void WaPlot::insertWa( float pitch, float duration, int waSetId ) {
+	Assert(unsigned(waSetId)<myWas.maxId);
     waMark w;
     w.setFromPitchAndDuration(pitch,duration);
-    myWas.set[w].set(wackId);
+    myWas.set[w].set(waSetId);
     xLimit.include(w.x);
     yLimit.include(w.y);
 }
 
-int WaPlot::getWackId( const std::string& wackName ) {
-	auto i = myWackIds.find(wackName);
-	if( i==myWackIds.end() ) {
+int WaPlot::getWaSetId( const std::string& waSetName ) {
+	auto i = myWaSetIds.find(waSetName);
+	if( i==myWaSetIds.end() ) {
 		// The name has no id yet, so create one.
-		int n = myWackIds.size();
-		myWackIds[wackName] = n;
+		int n = myWaSetIds.size();
+		myWaSetIds[waSetName] = n;
 		return n;
 	} else {
 		return i->second;
@@ -139,7 +143,7 @@ int WaPlot::getWackId( const std::string& wackName ) {
 void WaPlot::clear() {
     myNotes.clear();
 	myWas.clear();
-	myWackIds.clear();
+	myWaSetIds.clear();
     xLimit.clear();
     yLimit.clear();
     rLimit.clear();
@@ -214,14 +218,14 @@ void WaPlot::doMouseDown( NimblePoint p ) {
         advance(j,i);
         float pitch, duration;
         j->first.getPitchAndDuration(pitch,duration);
-        for( auto k=myWackIds.begin(); k!=myWackIds.end(); ++k )
-            if( j->second[k->second] ) {
-                PlayWa( k->first, pitch, duration );
+        for( auto& k: myWaSetIds )
+            if( j->second[k.second] ) {
+                PlayWa( k.first, pitch, duration );
             }
      }
 
 #if 0
-    search myWas to find wack ids
+    search myWas to find waSet ids
     compute approximate pitch/duration
     for each wack id
         play

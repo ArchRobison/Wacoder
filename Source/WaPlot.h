@@ -8,7 +8,7 @@
 #include "Hue.h"
 
 //! Must be supplied by client of WaPlot
-extern void PlayWa( const std::string& wackName, float freq, float duration );
+extern void PlayWa( const std::string& waSetName, float freq, float duration );
 
 //! Plot of marks in "Wa-space"
 class WaPlot: public Clickable {
@@ -22,6 +22,7 @@ class WaPlot: public Clickable {
         void setFromPitchAndDuration( float pitch, float duration ); 
         void getPitchAndDuration( float& pitch, float& duration ) const;
     };
+
     //! Mark denoting a note
     struct noteMark: waPoint {
         //! Radius (proportional to volume)
@@ -32,6 +33,7 @@ class WaPlot: public Clickable {
                    a.r<b.r;
         }
     };
+
     //! Mark denoting a Wa
     struct waMark: waPoint {
         bool friend operator<( const waMark& a, const waMark& b ) {
@@ -39,11 +41,11 @@ class WaPlot: public Clickable {
         }
     };
 
-	typedef std::map<std::string, int> wackIdMapType;
-	//! Map from wack names to ids
-	wackIdMapType myWackIds;
+	typedef std::map<std::string, int> waSetIdMapType;
+	//! Map from waSet names to ids
+	waSetIdMapType myWaSetIds;
 
-    // Set of marks and their associated tracks/wacks
+    // Set of marks and their associated tracks/waSets
 	template<typename Mark, size_t MaxId>
 	struct collection {
 		static const size_t maxId = MaxId;
@@ -100,12 +102,12 @@ public:
     void setTrackHues( HueMap h ) {
         myNotes.chosen = h;
     }
-	void setWackHues( HueMap h ) {
+	void setWaSetHues( HueMap h ) {
         myWas.chosen = h;
 	}
-    //! Given name of a Wack, get corresponding index (or create one)
-	int getWackId( const std::string& wackName );
-    void insertWa( float pitch, float duration, int wackId );
+    //! Given name of a WaSet, get corresponding index (or create one)
+	int getWaSetId( const std::string& waSetName );
+    void insertWa( float pitch, float duration, int waSetId );
     void setDynamicWa( float pitch, float duration );
 	void setWindowSize( int width, int height ) {
 		setClickableSize(width,height);

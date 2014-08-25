@@ -19,14 +19,13 @@
 
 #include "AssertLib.h"
 #include <cassert>
+#include <cstdio>
 
 #if ASSERTIONS
 #if !USE_HOST_ASSERT
-extern void AssertionFailure(const char* filename, int line, const char* expression) {
-    {
-        // It's often handy to set a breakpoint on the assertion below.
-        assert(0);
-    }
+void AssertionFailure(const char* filename, int line, const char* expression) {
+    // It's often handy to set a breakpoint on the assertion below.
+    assert(0);
 }
 #endif /*!USE_HOST_ASSERT*/
 #endif /*NO_ASSERTIONS*/

@@ -22,8 +22,8 @@
 #include <vector>
 #include <map>
 
-class Wack;
-typedef std::map<std::string,const Wack*> NameToWackMap;
+class WaSet;
+typedef std::map<std::string,const WaSet*> NameToWaSetMap;
 
 //! Midi track
 class MidiTrack: NoCopy {
@@ -176,7 +176,7 @@ public:
             delete myEnsemble[i];
     }
     //! Initialize player to play given tune.
-    void play( const MidiTune& tune, const NameToWackMap& trackMap );
+    void play( const MidiTune& tune, const NameToWaSetMap& trackMap );
     //! Stop current tune
     void stop();
     //! Update player
@@ -184,7 +184,7 @@ public:
     void update();
 };
 
-extern NameToWackMap TheWackMap; 
+extern NameToWaSetMap TheWaSetMap; 
 void LoadWaCoder( const std::string id, const std::string path );
 
 #endif /* Midi_H */

@@ -2,7 +2,7 @@
 #include <utility>
 #include <vector>
 #include "Utility.h"
-#include "Wack.h"
+#include "WaSet.h"
 
 #define USE_IPP 1
 
@@ -159,7 +159,7 @@ float FrequencyOfWa( const float* a, int n ) {
     return freq;
 }
 
-Wack::Wack( const std::string& wavFilename ) : myFileName(wavFilename) {
+WaSet::WaSet( const std::string& wavFilename ) : myFileName(wavFilename) {
     Waveform w;
     w.readFromFile( wavFilename.c_str() );
     WaBounds waBounds;
@@ -188,7 +188,7 @@ static inline float Hypot( float x, float y ) {
     return sqrt(x*x+y*y);
 }
 
-const Wa* Wack::lookup( float freq, float duration ) const {
+const Wa* WaSet::lookup( float freq, float duration ) const {
     float bestD = FLT_MAX;
     int bestI = -1;
     for( int i=0; i<int(myArray.size()); ++i ) {
@@ -207,7 +207,7 @@ const Wa* Wack::lookup( float freq, float duration ) const {
 }
 
 #if HAVE_WriteWaPlot
-void Wack::writeWaPlot( const char* filename ) const {
+void WaSet::writeWaPlot( const char* filename ) const {
     FILE* f = fopen(filename,"w");
     for( int i=0; i<int(myArray.size()); ++i )
         fprintf(f,"%d %g %g\n", i, myArray[i].duration*myArray[i].freq, myArray[i].freq );
@@ -218,12 +218,14 @@ void Wack::writeWaPlot( const char* filename ) const {
 void WaInstrument::processEvent() {
     switch( event() ) {
         case MEK_NoteOn: {
-            MidiTrackReader::futureEvent fe = findNextOffOrOn();
-            float desiredPitch = 440*std::pow(1.059463094f,note()-69);
-            auto wa = myWaCoder.lookup( desiredPitch, fe.time/myTickPerSec );
-            float relativeFreq = desiredPitch/wa->freq;
-            SimpleSource* k = SimpleSource::allocate(wa->waveform, relativeFreq);
-            Play(k);
+            if( velocity() ) {
+                MidiTrackReader::futureEvent fe = findNextOffOrOn();
+                float desiredPitch = 440*std::pow(1.059463094f, note()-69);
+                auto wa = myWaCoder.lookup(desiredPitch, float(fe.time/myTickPerSec));
+                float relativeFreq = desiredPitch/wa->freq;
+                SimpleSource* k = SimpleSource::allocate(wa->waveform, relativeFreq);
+                Play(k);
+            }
             break;
         }
     }

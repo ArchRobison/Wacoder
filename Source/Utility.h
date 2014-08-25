@@ -108,8 +108,8 @@ template<typename T, size_t Extra=0>
 class SimpleArray {
     T* myStart;
     size_t mySize;
-    void operator=( const SimpleArray& );  // Deny access
-    SimpleArray( const SimpleArray& );     // Deny access
+    void operator=( const SimpleArray& ) = delete;
+    SimpleArray( const SimpleArray& ) = delete;
 public:
     SimpleArray() : myStart(0), mySize(0) {}
     SimpleArray( size_t n ) {

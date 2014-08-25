@@ -53,7 +53,7 @@ const bool ExclusiveMode = EXCLUSIVE_MODE;
 #elif ASSERTIONS
 const bool ExclusiveMode = false;
 #else
-const bool ExclusiveMode = true;
+const bool ExclusiveMode = false;
 #endif
 
 static int DisplayWidth;

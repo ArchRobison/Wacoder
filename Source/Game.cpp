@@ -15,8 +15,13 @@
 #include "Synthesizer.h"
 #include "TrackToWaDialog.h"
 #include "WaPlot.h"
-#include "Wack.h"
+#include "WaSet.h"
 #include "Widget.h"
+
+#define GAME_LOG 0
+#if GAME_LOG
+static std::ofstream GameLog("C:\\tmp\\gamelog.txt");
+#endif
 
 static MidiPlayer TheMidiPlayer;
 static std::string TheMidiTuneFileName;  // If empty, then not yet set
@@ -42,8 +47,10 @@ static void CopyTuneToWaPlot(WaPlot& plot, const MidiTune& tune) {
         for(mtr.setTrack(tune[i]); mtr.event()!=MEK_EndOfTrack; mtr.next()) {
             switch(mtr.event()) {
                 case MEK_NoteOn: {
-                    MidiTrackReader::futureEvent fe = mtr.findNextOffOrOn();
-                    plot.insertNote(mtr.pitch(), fe.time*timeScale, mtr.velocity(), i);
+                    if( auto velocity = mtr.velocity() ) {
+                        MidiTrackReader::futureEvent fe = mtr.findNextOffOrOn();
+                        plot.insertNote(mtr.pitch(), fe.time*timeScale, mtr.velocity(), i);
+                    }
                     break;
                 }
             }
@@ -51,10 +58,11 @@ static void CopyTuneToWaPlot(WaPlot& plot, const MidiTune& tune) {
     }
 }
 
-static void CopyWackToWaPlot(WaPlot& plot, std::string name, const Wack& w) {
-    auto waId = TheWaPlot.getWackId(name);
-    for(size_t j=0; j<w.size(); ++j)
-        plot.insertWa(w[j].freq, w[j].duration, waId);
+static void CopyWaSetToWaPlot(WaPlot& plot, std::string name, const WaSet& w) {
+    auto waId = TheWaPlot.getWaSetId(name);
+    w.forEach([&](const Wa& w) {
+        plot.insertWa(w.freq,w.duration, waId);
+    });
 }
 
 static void ReadMidiTune(const char* filename) {
@@ -63,7 +71,6 @@ static void ReadMidiTune(const char* filename) {
         TheTrackToWaDialog.clear();
         TheTrackToWaDialog.setFromTune(TheMidiTune);
         CopyTuneToWaPlot(TheWaPlot,TheMidiTune);
-        // FIXME - update the  waplot...
     } else {
         // FIXME - HostWarning will exit
         HostWarning(TheMidiTune.readStatus());
@@ -84,9 +91,12 @@ static std::string CurrentProjectFileName;
 /** Format of the file is as follows.  Each line has the form [mwt] .*
     The first character denotes the type of line.
     m: .* denotes a midi file.  This line must come first.
-    w: .* denotes a wack file.
+    w: .* denotes a waSet file.
     t: .* denotes a MIDI track name.  (Use canonical synthetic one if track has no name) */
 static void OpenWacoderProject(const std::string& filename) {
+#if GAME_LOG
+    GameLog << "enter OpenWacoderProject(" << filename << ")\n" << std::flush;
+#endif
     if(FileSuffix(filename)!="wacoder") {
         // Ignore files with incorrect suffix
         return;
@@ -94,6 +104,9 @@ static void OpenWacoderProject(const std::string& filename) {
     std::ifstream f(filename);
     std::string buf;
     while(getline(f, buf)) {
+#if GAME_LOG
+        GameLog << "getline returned:" << buf << "\n" << std::flush; 
+#endif
         if(buf.size()>=3 && buf[1]==' ') {
             const char* path = buf.c_str()+2;
             switch(buf[0]) {
@@ -105,7 +118,7 @@ static void OpenWacoderProject(const std::string& filename) {
                     ReadMidiTune(path);
                     break;
                 case 'w':
-                    TheTrackToWaDialog.addWaCoder(path);
+                    TheTrackToWaDialog.addWaSet(path);
                     break;
                 case 't':
                     TheTrackToWaDialog.addTrack(path);
@@ -117,9 +130,15 @@ static void OpenWacoderProject(const std::string& filename) {
         }
     }
     f.close();
+#if GAME_LOG
+    GameLog << "closed file " << filename << "\n" << std::flush;
+#endif
     CurrentProjectFileName = filename;
-    for(auto i=TheWackMap.begin(); i!=TheWackMap.end(); ++i)
-        CopyWackToWaPlot(TheWaPlot, i->first, *i->second);
+    for(auto i=TheWaSetMap.begin(); i!=TheWaSetMap.end(); ++i)
+        CopyWaSetToWaPlot(TheWaPlot, i->first, *i->second);
+#if GAME_LOG
+    GameLog << "leave OpenWacoderProject(" << filename << ")\n" << std::flush;
+#endif
 }
 
 static void OpenWacoderProject() {
@@ -130,8 +149,8 @@ static void SaveWacoderProject(const std::string& filename) {
     Assert(!TheMidiTuneFileName.empty() );
     std::ofstream f(CurrentProjectFileName);
     f << "m " << TheMidiTuneFileName << std::endl;
-    TheTrackToWaDialog.forEach( [&f](bool isWack, const std::string& s ) {
-        f << (isWack ? "w " : "t ");
+    TheTrackToWaDialog.forEach( [&f](bool isWaSet, const std::string& s ) {
+        f << (isWaSet ? "w " : "t ");
         f << s << std::endl;
     });
     f.close();
@@ -170,7 +189,7 @@ bool GameInitialize() {
 }
 
 static void PlayTune() {
-	NameToWackMap trackMap;
+	NameToWaSetMap trackMap;
 	TheTrackToWaDialog.loadTrackMap(trackMap); 
 	TheMidiPlayer.play(TheMidiTune,trackMap);
 }
@@ -278,9 +297,9 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
         int x = screen.width()-ThePlayButton.width()-TheRecordButton.width()-InputVolumeMeter.width();
         TheWaPlot.setWindowSize(x,screen.height());
         TheWaPlot.setTrackHues(TheTrackToWaDialog.hilightedTracks());
-        TheWaPlot.setWackHues( HueMap( []( Hue h ) -> int {
-            if( auto* s = TheTrackToWaDialog.hilightedWack(h) ) 
-                return TheWaPlot.getWackId(*s);
+        TheWaPlot.setWaSetHues( HueMap( []( Hue h ) -> int {
+            if( auto* s = TheTrackToWaDialog.hilightedWaSet(h) ) 
+                return TheWaPlot.getWaSetId(*s);
             else
                 return -1;
         }));
@@ -308,30 +327,7 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
 }
 
 void GameResizeOrMove( NimblePixMap& map ) {
-#if 0
-    ReadWav("C:/tmp/High Score.wav");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/chromaticescale.mid");m
-#endif
-#if 0
-    InitializeMidi("C:/tmp/tfdm.mid");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/SimpleScale.mid");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/midi/MoonlightSonata.mid");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/midi/the_beatles-eleanor_rigby.mid");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/beethoven-ode-to-joy-from-4th-movement-9th-symphony.mid");
-#endif
-#if 0
-    InitializeMidi("C:/tmp/beethoven_ode_to_joy.mid");
-#endif
+
 
 }
 
@@ -339,24 +335,20 @@ void GameDroppedFile(NimblePoint where, const char* filename) {
     if( TheTrackToWaDialog.contains(where)) {
         if( FileSuffix suffix = FileSuffix(filename) ) {
             if( suffix=="mid" ) {
+                // Read MIDI file
                 ReadMidiTune( filename );
             } else if( suffix=="wav" ) {
-                std::string name = TheTrackToWaDialog.addWaCoder(filename);
-                CopyWackToWaPlot( TheWaPlot, name, *TheWackMap.find(name)->second );
+                // Read a WaSet
+                std::string name = TheTrackToWaDialog.addWaSet(filename);
+                CopyWaSetToWaPlot( TheWaPlot, name, *TheWaSetMap.find(name)->second );
             } else if( suffix=="wacoder" ) {
                 OpenWacoderProject(filename); 
             }
         }
-#if 0
-       if a .wav file (use case-insensitive comparison), treat it as a set of was.  Insert in permutation dialog where dropped.
-       if a .mid file (use case-insensitive comparison), treat as new midi to play.  Reassign old was based on closest match to average pitch of track.
-       if a .wacoder file, treat as a new track to wa mapping.
-#endif
     }
 }
 
-void PlayWa( const std::string& wackName, float freq, float duration ) {
-    const Wa* wa = TheWackMap[wackName]->lookup(freq,duration);
+void PlayWa( const std::string& waSetName, float freq, float duration ) {
+    const Wa* wa = TheWaSetMap[waSetName]->lookup(freq,duration);
     Play(Synthesizer::SimpleSource::allocate(wa->waveform));
 }
-

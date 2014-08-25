@@ -7,19 +7,19 @@ int TrackToWaDialog::hilightedTrack( Hue h ) const {
     if( i>=0 ) {
         Assert( unsigned(i)<=size() );
         auto& t = myItems[i];
-        if( !t.isWaCoder )
+        if( !t.isWaSet )
             return t.index;
 
     }
     return -1;
 }
 
-const std::string* TrackToWaDialog::hilightedWack( Hue h ) const {
+const std::string* TrackToWaDialog::hilightedWaSet( Hue h ) const {
     int i = hilighted(h);
     if( i>=0 ) {
         Assert( unsigned(i)<=size() );
         auto& t = myItems[i];
-        if( t.isWaCoder )
+        if( t.isWaSet )
             return &t.name;
     }
     return NULL;
@@ -55,18 +55,18 @@ void TrackToWaDialog::setFromTune( MidiTune& tune ) {
             ++k;
             trackOrWa tw;
             tw.name = t.trackId(k);
-            tw.isWaCoder = false;
+            tw.isWaSet = false;
             tw.index = i;
             myItems.push_back(tw);
         }
     }
 }
 
-std::string TrackToWaDialog::addWaCoder(const std::string& path) {
+std::string TrackToWaDialog::addWaSet(const std::string& path) {
     trackOrWa t;
     t.fullpath = path;
     t.name = GetSimpleName(path);
-    t.isWaCoder = true;
+    t.isWaSet = true;
     myItems.push_back(t);
     LoadWaCoder(t.name, t.fullpath);
     return t.name;
@@ -75,10 +75,10 @@ std::string TrackToWaDialog::addWaCoder(const std::string& path) {
 void TrackToWaDialog::addTrack( const char* trackname ) {
     trackOrWa t;
     t.name = trackname;
-    t.isWaCoder = false;
+    t.isWaSet = false;
     // Check if track is defined.  If so, save track index and erase it from its current position.
     for(auto j=myItems.begin(); j!=myItems.end(); ++j)
-        if(!j->isWaCoder && j->name==t.name) {
+        if(!j->isWaSet && j->name==t.name) {
             t.index = j->index;
             myItems.erase(j);
             break;
@@ -87,12 +87,12 @@ void TrackToWaDialog::addTrack( const char* trackname ) {
     myItems.push_back(t);
 }
 
-void TrackToWaDialog::loadTrackMap( NameToWackMap& trackMap ) {
-	const Wack* w = NULL;
+void TrackToWaDialog::loadTrackMap( NameToWaSetMap& trackMap ) {
+	const WaSet* w = NULL;
 	trackMap.clear();
 	for( auto i=myItems.begin(); i!=myItems.end(); ++i )
-		if( i->isWaCoder )
-			w = TheWackMap.find(i->name)->second;
+		if( i->isWaSet )
+			w = TheWaSetMap.find(i->name)->second;
 		else 
 			if( w )
 				trackMap[i->name] = w;
