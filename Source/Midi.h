@@ -25,6 +25,9 @@
 class WaSet;
 typedef std::map<std::string,const WaSet*> NameToWaSetMap;
 
+//! Get string description of value in a MIDI Program Change message. 
+const char* MidiProgramName( int program );
+
 //! Midi track
 class MidiTrack: NoCopy {
 public:
@@ -33,6 +36,7 @@ public:
         bool hasNotes;
         std::string trackName;
         std::string firstComment;
+        int firstProgram;
         infoType() : isValid(false), hasNotes(false) {}
     };
     const infoType& getInfo() const;
@@ -61,6 +65,7 @@ public:
         return myTrack[i];
     }
     float tickPerSec() const {return myTickPerSec;}
+    bool empty() const {return myTrack.size()==0;}
 private:
     friend class MidiPlayer;
     SimpleArray<MidiTrack> myTrack;
@@ -108,7 +113,7 @@ public:
         return MidiEventKind(myEvent);
     }
     int channel() const {
-        Assert( myEvent==MEK_NoteOff||myEvent==MEK_NoteOn );
+        Assert( myEvent==MEK_NoteOff||myEvent==MEK_NoteOn||myEvent==MEK_ProgramChange||myEvent==MEK_ControllerChange );
         return myStatus&0xF;
     }
     int note() const {
@@ -123,6 +128,10 @@ public:
     }
     float pitch() const {
         return 440*std::pow(1.059463094f, note()-69);
+    }
+    int program() const {
+        Assert(myEvent==MEK_ProgramChange);
+        return myPtr[0];
     }
     std::string text() const;
     struct futureEvent {
@@ -147,12 +156,16 @@ private:
     const byte* myEnd;
 #if ASSERTIONS
     const byte* myBegin;
-    void dump( const char* filename );
+    friend void DumpTrack(const char* outputFilename, const MidiTrack& track);
 #endif
     byte readByte() {return *myPtr++;}
     unsigned readVariableLen();
     void readDeltaAndEvent();
 };
+
+#if ASSERTIONS
+void DumpTrack(const char* outputFilename, const MidiTrack& track);
+#endif
 
 class MidiInstrument: public MidiTrackReader {
 public:

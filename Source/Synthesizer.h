@@ -147,7 +147,9 @@ public:
 //! Intialize synthesizer global structures.
 void Initialize();
 
-void OutputInterruptHandler( Waveform::sampleType* left, Waveform::sampleType* right, unsigned n ) ;
+//! Fill left and right with next n samples
+void OutputInterruptHandler( Waveform::sampleType* left, Waveform::sampleType* right, unsigned n );
+
 void InputInterruptHandler( const Waveform::sampleType* wave, size_t n );
 
 //! Start playing src.  Method src->destroy() will be invoked after src->update() returns.

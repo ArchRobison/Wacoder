@@ -189,6 +189,7 @@ bool GameInitialize() {
 }
 
 static void PlayTune() {
+    if( TheMidiTune.empty() ) return;
 	NameToWaSetMap trackMap;
 	TheTrackToWaDialog.loadTrackMap(trackMap); 
 	TheMidiPlayer.play(TheMidiTune,trackMap);
@@ -264,13 +265,23 @@ void GameKeyDown( int key ) {
         case 'm':  
 		    PlayTune();
             break;
-        case 'n':
+        case 'n': {
             std::string buf = ( GetFileNameOp::create, "Wacoder Project", "wacoder" );
             static volatile int banana=1;
             banana++;
             break;
-    }
+        }
 #endif
+#if ASSERTIONS
+        case 'd':
+            for( unsigned i=0; i<TheMidiTune.nTrack(); ++i ) {
+                char name[64];
+                sprintf(name,"/tmp/tmp/track_%u",i+1);
+                DumpTrack(name,TheMidiTune[i]);
+            }
+            break;
+#endif
+    }
 }
 
 unsigned Counter;

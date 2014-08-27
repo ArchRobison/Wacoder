@@ -13,6 +13,7 @@ static LPDIRECTSOUNDBUFFER DirectSoundBuffer;
 static WAVEFORMATEX WaveFormat;
 
 #define USE_WAVE_FORMAT_IEEE_FLOAT 1
+#define HAVE_SOUND_INPUT 1
 
 const size_t N_OutputChannel = 2;
 #if USE_WAVE_FORMAT_IEEE_FLOAT 
@@ -62,6 +63,7 @@ static void ConvertAccumulatorToSamples( NativeSample dst[], Accumulator src, in
         }
 }
 
+//! Refill the DirectSoundBuffer
 static void DoSoundOutput() {
     static DWORD begin;
     DWORD playCursor;
@@ -70,7 +72,7 @@ static void DoSoundOutput() {
     HRESULT status = DirectSoundBuffer->GetCurrentPosition( &playCursor, &writeCursor );
     DWORD end = (playCursor+SamplesPerPlayAheadMargin*BytesPerOutputSample) % BytesPerOutputBuffer;
     if( end!=begin ) {
-        int n = (end+BytesPerOutputBuffer-begin)%BytesPerOutputBuffer/BytesPerOutputSample;
+        int n = (end+BytesPerOutputBuffer-begin) % BytesPerOutputBuffer / BytesPerOutputSample;
         Assert( n<=SamplesPerBuffer );
         void *ptr1, *ptr2;
         DWORD size1, size2;

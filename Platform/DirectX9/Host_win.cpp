@@ -62,9 +62,6 @@ static int DisplayHeight;
 #if SOUND_ONLY
 static short WindowWidth = ExclusiveMode ? 1024 : 256;
 static short WindowHeight = ExclusiveMode ? 768 : 192;
-#elif HAVE_SOUND_INPUT
-static short WindowWidth = ExclusiveMode ? 1024 : 512;
-static short WindowHeight = ExclusiveMode ? 768 : 384;
 #else
 // Voromoeba "Help" overlay dictates minimum display size
 static short WindowWidth = ExclusiveMode ? 1024 : 1024;

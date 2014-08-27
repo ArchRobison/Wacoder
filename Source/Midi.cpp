@@ -30,6 +30,150 @@ static void ByteSwap( uint32_t& x ) {
     x = x<<24 | x<<8&0xFF0000 | x>>8&0xFF00 | x>>24;
 }
 
+//! Reference: http://www.midi.org/techspecs/gm1sound.php
+/** Table here is zero-based (documentation is mysteriously one-based) */
+static const char* MidiProgramNameTable[] = { 
+    "Acoustic Grand Piano", // [0]
+    "Bright Acoustic Piano",
+    "Electric Grand Piano", 
+    "Honky-tonk Piano",
+    "Electric Piano 1",
+    "Electric Piano 2",
+    "Harpsichord",
+    "Clavi",
+    "Celesta",
+    "Glockenspiel",
+    "Music Box",
+    "Vibraphone",
+    "Marimba",
+    "Xylophone",
+    "Tubular Bells",
+    "Dulcimer",
+    "Drawbar Organ", // [16]
+    "Percussive Organ",
+    "Rock Organ",
+    "Church Organ",
+    "Reed Organ",
+    "Accordion",
+    "Harmonica",
+    "Tango Accordion",
+    "Acoustic Guitar",
+    "Acoustic Steel Guitar",
+    "Electric Guitar (jazz)",
+    "Electric Guitar (clean)",
+    "Electric Guitar (muted)",
+    "Overdriven Guitar",
+    "Distortion Guitar",
+    "Guitar harmonics",
+    "Acoustic Bass",
+    "Electric Bass (finger)",
+    "Electric Bass (pick)",
+    "Fretless Bass",
+    "Slap Bass 1",
+    "Slap Bass 2",
+    "Synth Bass 1",
+    "Synth Bass 2",
+    "Violin",
+    "Viola",
+    "Cello",
+    "Contrabass",
+    "Tremolo Strings",
+    "Pizzicato Strings",
+    "Orchestral Harp",
+    "Timpani",
+    "String Ensemble 1",
+    "String Ensemble 2",
+    "SynthStrings 1",
+    "SynthStrings 2",
+    "Choir Aahs",
+    "Voice Oohs",
+    "Synth Voice",
+    "Orchestra Hit",
+    "Trumpet",
+    "Trombone",
+    "Tuba",
+    "Muted Trumpet",
+    "French Horn",
+    "Brass Section",
+    "SynthBrass 1",
+    "SynthBrass 2",
+    "Soprano Sax", // [64]
+    "Alto Sax",
+    "Tenor Sax",
+    "Baritone Sax",
+    "Oboe",
+    "English Horn",
+    "Bassoon",
+    "Clarinet",
+    "Piccolo",
+    "Flute",
+    "Recorder",
+    "Pan Flute",
+    "Blown Bottle",
+    "Shakuhachi",
+    "Whistle",
+    "Ocarina",
+    "Lead 1 (square)",
+    "Lead 2 (sawtooth)",
+    "Lead 3 (calliope)",
+    "Lead 4 (chiff)",
+    "Lead 5 (charang)",
+    "Lead 6 (voice)",
+    "Lead 7 (fifths)",
+    "Lead 8 (bass + lead)",
+    "Pad 1 (new age)",
+    "Pad 2 (warm)",
+    "Pad 3 (polysynth)",
+    "Pad 4 (choir)",
+    "Pad 5 (bowed)",
+    "Pad 6 (metallic)",
+    "Halo Pad",
+    "Pad 8 (sweep)",
+    "FX 1 (rain)",
+    "FX 2 (soundtrack)",
+    "FX 3 (crystal)",
+    "FX 4 (atmosphere)",
+    "FX 5 (brightness)",
+    "FX 6 (goblins)",
+    "FX 7 (echoes)",
+    "FX 8 (sci-fi)",
+    "Sitar",
+    "Banjo",
+    "Shamisen",
+    "Koto",
+    "Kalimba",
+    "Bag pipe",
+    "Fiddle",
+    "Shanai",
+    "Tinkle Bell",
+    "Agogo",
+    "Steel Drums",
+    "Woodblock",
+    "Taiko Drum",
+    "Melodic Tom",
+    "Synth Drum",
+    "Reverse Cymbal",
+    "Guitar Fret Noise",
+    "Breath Noise",
+    "Seashore",
+    "Bird Tweet",
+    "Telephone Ring",
+    "Helicopter",
+    "Applause",
+    "Gunshot" // [127]
+};
+
+//! Get string description of value in a MIDI Program Change message. 
+const char* MidiProgramName(int program) {
+    static const unsigned n = sizeof(MidiProgramNameTable)/sizeof(MidiProgramNameTable[0]);
+    Assert(n==128);
+    Assert(strcmp(MidiProgramNameTable[127], "Gunshot")==0);
+    if( unsigned(program)<n )
+        return MidiProgramNameTable[program];
+    else
+        return "unknown MIDI Program Change program";
+}
+
 //-----------------------------------------------------------------
 // MidiTrack
 //-----------------------------------------------------------------
@@ -37,6 +181,7 @@ static void ByteSwap( uint32_t& x ) {
 const MidiTrack::infoType& MidiTrack::getInfo() const {
     if( !info.isValid ) {
         info.hasNotes = false;
+        info.firstProgram = -1;
         MidiTrackReader mtr;
         for( mtr.setTrack(*this); ; mtr.next() ) {
             switch(mtr.event()) {
@@ -47,6 +192,9 @@ const MidiTrack::infoType& MidiTrack::getInfo() const {
                     break;
                 case MEK_Comment:
                     info.firstComment = mtr.text();
+                    break;
+                case MEK_ProgramChange:
+                    info.firstProgram = mtr.program();
                     break;
                 case MEK_NoteOn:
                 case MEK_NoteOff:
@@ -159,7 +307,7 @@ done:
     return fe;
 }
 
-#if 0
+#if ASSERTIONS
 static void DumpString( FILE* f, const byte* s, size_t n, bool newline=false ) {
     fprintf(f,"\"");
     for( size_t i=0; i<n; ++i )
@@ -167,40 +315,35 @@ static void DumpString( FILE* f, const byte* s, size_t n, bool newline=false ) {
     fprintf(f,"\"%s",newline?"\n":0);
 }
 
-void MidiTrackReader::dump( const char* filename ) {
-    static FILE* f;
-    if( f ) {
-        for( int k=0; k<30; ++k )
-            fprintf(f,"%x ",myPtr[k]);
-        fprintf(f,"\n");
-        fclose(f);
-        exit(1);
+void DumpTrack(const char* outputFilename, const MidiTrack& track) {
+    FILE* f = fopen(outputFilename, "w+");
+    if(!f) {
+        return;
     }
-    f = fopen(filename,"w");
     MidiTrackReader mtr;
-    mtr.init(myBegin,myEnd);
-    while( mtr.myPtr<myEnd ) {
+    mtr.setTrack(track);
+    for(;;) {
         const char* hint = "";
         switch( mtr.event() ) {
             case MEK_TrackName:
                 fprintf(f,"time=%d metaevent=%x [TrackName] len=%d ",mtr.time(),mtr.event()-0x10, mtr.myLen );
                 DumpString(f,mtr.myPtr,mtr.myLen,true);
                 break;
-            case MEK_NoteOn:
-                hint = " [note on]";
-                goto simple;
             case MEK_NoteOff:
-                hint = " [note off]";
-                goto simple;
+            case MEK_NoteOn:
+                fprintf(f, "time=%d event=%x channel=%d [note %s] note=%d velocity=%d\n", mtr.time(), mtr.event(), mtr.channel(), mtr.event()==MEK_NoteOn ? "on" : "off",mtr.note(), mtr.velocity());
+                break;
             case MEK_ControllerChange:
-                fprintf(f,"time=%d event=%x [controller change] len=%d c=%d v=%d\n",mtr.time(), mtr.event(), mtr.myLen, mtr.myPtr[0], mtr.myPtr[1]);
+                fprintf(f, "time=%d event=%x channel=%d [controller change] len=%d c=%d v=%d\n", mtr.time(), mtr.event(), mtr.channel(), mtr.myPtr[0], mtr.myPtr[1]);
                 break;
             case MEK_ProgramChange:
-                hint = " [program change]";
-                goto simple;
+                fprintf(f, "time=%d event=%x channel=%d [program change] program=%d [%s]\n", mtr.time(), mtr.event(), mtr.channel(), mtr.program(), MidiProgramName(mtr.program()));
+                break;
             case MEK_PitchBend:
                 hint = " [pitch bend]";
                 goto simple;
+            case MEK_EndOfTrack:
+                goto done;
             default:
 simple:
                 fprintf(f,"time=%d event=%x%s len=%d\n",mtr.time(), mtr.event(), hint, mtr.myLen);
@@ -208,6 +351,7 @@ simple:
         }
         mtr.next();
     }
+done:
     fclose(f);
 }
 #endif
@@ -269,6 +413,7 @@ void MidiTune::noteError( const char* format, unsigned value ) {
 
 void MidiTune::clear() {
     myTrack.clear();
+    myReadStatus[0] = 0;
 }
 
 void MidiTune::assign(const byte* first, const byte* last) {
@@ -295,7 +440,7 @@ void MidiTune::assign(const byte* first, const byte* last) {
 
     // Allocate trackDesc structures
     myTrack.resize(h.numTracks);
-    // Read each track
+    // Read each track as raw bytes
     for( unsigned i=0; i<h.numTracks; ++i ) {
         MidiTrackHeader t;
         first = readHeader(t,first,last,"MTrk");
@@ -467,7 +612,7 @@ void AdditiveInstrument::processEvent() {
         }
         off:
         case MEK_NoteOff: {
-            int n = note()& 0x7F;
+            int n = note() & 0x7F;
             release(n);
             Assert(onLevel[n]>0);
 #if ASSERTIONS
@@ -533,6 +678,8 @@ std::string MidiTrack::trackId( int k ) const {
     getInfo();
     if( !info.trackName.empty() )
         id = info.trackName;
+    else if( info.firstProgram!=-1) 
+        id = MidiProgramName(info.firstProgram);
     else if( !info.firstComment.empty() )
         id = info.firstComment;
     else {

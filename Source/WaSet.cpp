@@ -189,6 +189,9 @@ static inline float Hypot( float x, float y ) {
 }
 
 const Wa* WaSet::lookup( float freq, float duration ) const {
+    const float minDuration = 1.0f/120;
+    if( duration<minDuration ) 
+        duration = minDuration;
     float bestD = FLT_MAX;
     int bestI = -1;
     for( int i=0; i<int(myArray.size()); ++i ) {

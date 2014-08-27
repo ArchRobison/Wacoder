@@ -34,9 +34,6 @@ public:
     };
 };
 
-/** Allow for one sustain and one release message.  FIXME - determine right queue bound */
-static NonblockingQueue<PlayerMessage> MessageQueue(1024);
-
 //-----------------------------------------------------------
 // Player
 //-----------------------------------------------------------
@@ -65,11 +62,6 @@ public:
         return d>=0 ? d : -d;
     }
 };
-
-static PoolAllocator<Player> PlayerAllocator(PlayerCountMax,false);   
-
-//! Queue for sending freed Players from interrupt handler to normal code. 
-static NonblockingQueue<Player*> FreePlayerQueue(PlayerCountMax);   
 
 bool Player::update( float* left, float* right, unsigned n ) {
     Assert( 0<n );
@@ -108,27 +100,35 @@ bool Player::update( float* left, float* right, unsigned n ) {
 }
 
 //-----------------------------------------------------------
-// Miscellaneous
+// Communication between thread and interrupt handler
 //-----------------------------------------------------------
+
+//! Queue for sending messages from main code to interrupt handler.
+/** Allow for one sustain and one release message.  FIXME - determine right queue bound */
+static NonblockingQueue<PlayerMessage> PlayerMessageQueue(1024);
+
+//! Queue for sending freed Players from interrupt handler to normal code. 
+static NonblockingQueue<Player*> FreePlayerQueue(PlayerCountMax);
 
 static inline float Hypot( float x, float y ) {
     return sqrt(x*x+y*y);
 }
 
 void Play( Source* src, float volume, float x, float y ) {
+    static PoolAllocator<Player> playerAllocator(PlayerCountMax, false);
+
     // Drain queue of freed players
     while( Player** p = FreePlayerQueue.startPop() ) {
         (*p)->source->destroy();
-        PlayerAllocator.destroy(*p);
+        playerAllocator.destroy(*p);
         FreePlayerQueue.finishPop();
     }
     if( !src ) 
         // Allocation of Source failed.
         return;
-    Player* p = PlayerAllocator.allocate();
+    Player* p = playerAllocator.allocate();
     src->player = p;
     p->source = src;
-    src->player = p;
     p->volume[0] = volume*cos(atan2(y,-x)/2);
     p->volume[1] = volume*cos(atan2(y,x)/2);
     float c = (Player::delayBufSize-1)/2;         // The "-1" is supposed to provide a safety margin for roundoff issues
@@ -138,41 +138,48 @@ void Play( Source* src, float volume, float x, float y ) {
     p->postSource = 0;
     std::memset( p->delayBuf, 0, sizeof(float)*p->delayDiff() );
 
-    // Send message
-    PlayerMessage* m = MessageQueue.startPush();
+    // Send message to interrupt handler.
+    PlayerMessage* m = PlayerMessageQueue.startPush();
     m->kind = WMK_Start;
     m->player = p;
-    MessageQueue.finishPush();
+    PlayerMessageQueue.finishPush();
 }
 
-static SimpleBag<Player*> LivePlayerSet(PlayerCountMax);
-
 void OutputInterruptHandler( Waveform::sampleType* left, Waveform::sampleType* right, unsigned n ) {
-    // Process message queue
-    while( PlayerMessage* m = MessageQueue.startPop() ) {
+    static SimpleBag<Player*> livePlayerSet(PlayerCountMax);
+
+    // Read incoming messages
+    while(PlayerMessage* m = PlayerMessageQueue.startPop()) {
         Player* p = m->player;
         Assert( (size_t(p)&3)==0 );
         Assert( p->source->player==p ); 
         if( m->kind==WMK_Start ) {
-            LivePlayerSet.push(p);
+            // Starting a new player
+            livePlayerSet.push(p);
         } else {
+            // Continuing an old player
             p->source->receive(*m);
         }
-        MessageQueue.finishPop();
+        PlayerMessageQueue.finishPop();
     }
 
+    // Get n samples
     while(n>0) {
+        // Get samples in chunks of up to Player::chunkMaxSize
         unsigned m = Min(n,Player::chunkMaxSize);
         // For each player, make it contribute m samples 
-        for( Player** pp = LivePlayerSet.begin(); pp<LivePlayerSet.end(); ) {
+        for(Player** pp = livePlayerSet.begin(); pp<livePlayerSet.end();) {
             Player& p = **pp;
             if( p.update(left,right,m) ) {
+                // Player not finished
                 ++pp;
             } else {
+                // Player is finished.  Send back for reclamation and erase from LivePlayerSet.
                 Player** f = FreePlayerQueue.startPush();
+                Assert(f);
                 *f = &p;
                 FreePlayerQueue.finishPush();
-                LivePlayerSet.erase(pp);
+                livePlayerSet.erase(pp);
             }
         }
         n-=m;
@@ -310,14 +317,14 @@ unsigned DynamicSource::update( float* acc, unsigned n ) {
 
 void DynamicSource::changeVolume( float newVolume, float deadline, bool releaseWhenDone ) {
     // Send message
-    PlayerMessage* m = MessageQueue.startPush();
+    PlayerMessage* m = PlayerMessageQueue.startPush();
     m->kind = WMK_ChangeVolume;
     m->player = player;
     m->dynamic.newVolume = newVolume;
     m->dynamic.deadline = unsigned(SampleRate*deadline);
     m->dynamic.release = releaseWhenDone;
     Assert( (size_t(player)&3)==0 );
-    MessageQueue.finishPush();
+    PlayerMessageQueue.finishPush();
 }
 
 //-----------------------------------------------------------
@@ -412,13 +419,13 @@ unsigned MidiSource::update( float* acc, unsigned n ) {
 
 void MidiSource::changeEnvelope(Envelope& e, float speed) {
     // Send message
-    PlayerMessage* m = MessageQueue.startPush();
+    PlayerMessage* m = PlayerMessageQueue.startPush();
     m->kind = WMK_ChangeEnvelope;
     m->player = player;
     m->midi.envelope = &e;
     m->midi.envDelta = Envelope::timeType(speed*Envelope::unitTime);
     Assert( (size_t(player)&3)==0 );
-    MessageQueue.finishPush();
+    PlayerMessageQueue.finishPush();
 }
 
 //-----------------------------------------------------------
