@@ -36,7 +36,7 @@ class ChannelMap;
 const char* ProgramName(int program);
 
 //! Number of seconds per unit time increment in an Event.
-static const float SecondsPerTimeUnit = 1.0f/4096;
+static const float SecondsPerTock = 1.0f/4096;
 
 class Event {
 public:
@@ -87,7 +87,7 @@ public:
         myNote = note;
         myVelocity = velocity;
     }
-    // Absolute time of the event.  Multiply by SecondsPerTimeUnit to get time in seconds.
+    // Absolute time of the event in tocks (not MIDI ticks).  
     timeType time() const { return myTime; }
 
     // Kind of the event
@@ -124,11 +124,6 @@ public:
     }
     void pushBack( const Event& e ) {
         myEvents.push_back(e);
-    }
-    void sortByTime() {
-        std::stable_sort(myEvents.begin(),myEvents.end(),[](const Event& x, const Event& y) {
-            return x.time()<y.time();
-        });
     }
 };
 
@@ -169,31 +164,21 @@ public:
 class Tune {
     EventSeq myEventSeq;
     ChannelMap myChannelMap;
-    uint16_t myTicksPerQuarterNote;
     std::string myReadStatus;
-    void parse(const uint8_t* first, const uint8_t* last);
-    void parseTrack(std::string& trackName, const uint8_t* first, const  uint8_t* last);
-    unsigned parseVariableLen(const uint8_t*& first, const uint8_t* last);
-    double timeUnitsPerTick(unsigned microsecondsPerQuarterNote ) {
-        return microsecondsPerQuarterNote/ (1000000 * SecondsPerTimeUnit * myTicksPerQuarterNote);
-    }
-    void reportError(const char* format, unsigned value=0);
-    // Ensure that "on note" and "off note" events are paired correctly.  
-    // Inserts/erases "off note" events to enforce pairing.
-    void canonicalizeEvents();
+    class parser;
+    friend class parser;
 #if ASSERTIONS
     // Check that Tune is in canonical form.
     bool assertOkay() const;
 #endif
 public:
-    Tune() : myTicksPerQuarterNote(0) {}
+    Tune() {}
     bool empty() const {
         return myChannelMap.empty();
     }
     void clear() {
         myEventSeq.clear();
         myChannelMap.clear();
-        myTicksPerQuarterNote = 0;
     }
     // Events, sorted by time, channel, note, velocity
     const EventSeq& events() const {return myEventSeq;}

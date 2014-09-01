@@ -232,7 +232,7 @@ void WaInstrument::noteOn(const Midi::Event& on, const  Midi::Event& off) {
     Assert(on.note()==off.note());
     Assert(on.channel()==off.channel());
     float desiredPitch = 440*std::pow(1.059463094f, on.note()-69);
-    float duration = (off.time()-on.time())*Midi::SecondsPerTimeUnit;
+    float duration = (off.time()-on.time())*Midi::SecondsPerTock;
     auto wa = myWaSet.lookup(desiredPitch, duration);
     float relativeFreq = desiredPitch/wa->freq;
     SimpleSource* k = SimpleSource::allocate(wa->waveform, relativeFreq);

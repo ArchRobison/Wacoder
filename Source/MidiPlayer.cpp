@@ -230,7 +230,7 @@ void Player::update() {
     Assert(Key440AFreq>0);
 
     // Get current time in MIDI "tick" units
-    auto t = Event::timeType((HostClockTime()-myZeroTime)/SecondsPerTimeUnit);
+    auto t = Event::timeType((HostClockTime()-myZeroTime)/SecondsPerTock);
 
     // Process MIDI events up to time t
     for( ; myEventPtr<myEndPtr && myEventPtr->time()<=t; ++myEventPtr) {

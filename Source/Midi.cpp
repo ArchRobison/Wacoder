@@ -283,40 +283,110 @@ unsigned ChannelMap::findByName(const std::string& name) const {
     return ~0u;
 }
 
-void Tune::reportError(const char* format, unsigned value) {
+//==================================== Tune::parser ====================================
+
+#define TUNE_LOG 0
+#if TUNE_LOG
+static const char* TuneLogFileName = "C:\\tmp\\tmp\\tunelog.txt";
+static FILE* TuneLog;
+#endif
+
+class Tune::parser {
+    Tune& tune;
+    struct tempoMark {
+        unsigned tickTime;          // MIDI time in ticks
+        Event::timeType tockTime;   // Time in our units
+        double timeScale;           // subsequent tock/tick ratio until next mark
+        Event::timeType tockFromTick( unsigned tick ) const {
+            Assert(tick >= tickTime);
+            // Following assertion works because we call tockFromTick only for non-last tempoMarks in tempoMap
+            Assert(tick < (this+1)->tickTime);
+            return unsigned((tick-tickTime)*timeScale+0.5) + tockTime;
+        }
+    };
+    std::vector<tempoMark> tempoMap;
+    void assignTempo(tempoMark& m, unsigned tickTime, Event::timeType tockTime, unsigned microsecondsPerQuarterNote=500000) {
+        Assert(myTicksPerQuarterNote>0);
+        m.tickTime = tickTime;
+        m.tockTime = tockTime;
+        m.timeScale = microsecondsPerQuarterNote / (1000000 * SecondsPerTock * myTicksPerQuarterNote);
+    }
+    /** Returns pointer to the inserted tempoMark */
+    std::vector<tempoMark>::iterator addTempoMark(unsigned tickTime, Event::timeType tockTime, unsigned microsecondsPerQuarterNote) {
+        auto m = tempoMap.end()-2;
+        Assert(tickTime>=m->tickTime);
+        if( tickTime > m->tickTime ) {
+            // Need a new entry.  Insert it just before the dummy entry.
+            tempoMap.push_back(tempoMap.back());
+            m = tempoMap.end()-2;
+        }
+        assignTempo(*m, tickTime, tockTime, microsecondsPerQuarterNote);
+        return m;
+     }
+    std::string trackName;
+    uint16_t myTicksPerQuarterNote;
+    unsigned parseVariableLen(const uint8_t*& first, const uint8_t* last);
+    void parseTrack(const uint8_t* first, const uint8_t* last);
+    void throwError(const char* format, unsigned value=0);
+    // Ensure that "on note" and "off note" events are paired correctly.  
+    // Inserts/erases "off note" events to enforce pairing.
+    void canonicalizeEvents();
+public:
+    class badFile {};
+    parser(Tune& t) : tune(t), myTicksPerQuarterNote(0) {}
+
+    /** Throws badFile exception if there is a problem parsing the file. */
+    void parseFile(const uint8_t* first, const uint8_t* last);
+};
+
+void Tune::parser::throwError(const char* format, unsigned value) {
     char buf[128];
     Assert(std::strlen(format) + 8 <= sizeof(buf));
     sprintf(buf, format, value);
-    myReadStatus = buf;
+    tune.myReadStatus = buf;
+    throw badFile();
 }
 
-unsigned Tune::parseVariableLen(const uint8_t*& first, const uint8_t* last) {
+unsigned Tune::parser::parseVariableLen(const uint8_t*& first, const uint8_t* last) {
     unsigned value = 0;
     uint8_t c;
     do {
-        if( first>=last ) {
-            myReadStatus = "truncated value";
-            return value;
-        }
+        if( first>=last ) 
+            throwError("truncated value");
         c = *first++;
         value = value*128 + (c&0x7F);
     } while(c&0x80);
     return value;
 }
 
-void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_t* last) {
-    // To minimize round-off error, the "current time" is split into two parts.
-    Event::timeType timeAtLastTempoChange = 0;      // In our Event time units
-    unsigned timeInTicksAfterLastTempoChange = 0;   // In MIDI "delta time"
-    double timeScale = timeUnitsPerTick(500000);    // Conversion to our units from MIDI ticks.
-
+void Tune::parser::parseTrack(const uint8_t* first, const uint8_t* last) {
+    unsigned tickTime = 0;
+    auto currentTempo = tempoMap.begin();
+    trackName.clear();
+#if ASSERTIONS
+    Event::timeType prevTockTime = 0;
+#endif
     unsigned status = 0;
     unsigned channelRemap[16];
     for( size_t i=0; i<16; ++i )
         channelRemap[i] = ~0u;
-    size_t virtualChannelBase = myChannelMap.size();
+    size_t virtualChannelBase = tune.myChannelMap.size();
     while( first<last ) {
-        timeInTicksAfterLastTempoChange += parseVariableLen(first, last);
+        // Compute tockTime.
+        if( unsigned deltaTime = parseVariableLen(first, last) ) {
+            unsigned old = tickTime;
+            tickTime += deltaTime;
+            if( tickTime<old )
+                throwError("delta time overflow");
+            while(tickTime>=currentTempo[1].tickTime)
+                // Advance to next tempoMark
+                ++currentTempo;
+        }
+        Event::timeType tockTime = currentTempo->tockFromTick(tickTime);
+#if ASSERTIONS
+        Assert( tockTime>=prevTockTime );
+        prevTockTime = tockTime;
+#endif
         // MIDI files sometimes omit the status byte if it is the same as for the previous event.
         // Search Internet for "running status" to learn more.
         unsigned char c = *first&0x80 ? *first++ : status;
@@ -327,15 +397,23 @@ void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_
             switch(type) {
                 case 0x3:                       // Track name
                     trackName = std::string((const char*)first, len);
+#if TUNE_LOG
+                    fprintf(TuneLog, "trackname %s\n", trackName.c_str());
+#endif
                     break;
                 case 0x2F:                      // End of track
+#if TUNE_LOG
+                    fprintf(TuneLog, "end of track\n");
+                    fflush(TuneLog);
+#endif               
                     return;
                 case 0x51: {                    // Set tempo
                     Assert(len==3);
                     unsigned microsecondsPerQuarterNote = first[0]<<16 | first[1]<<8 | first[2];
-                    timeAtLastTempoChange += unsigned(timeInTicksAfterLastTempoChange*timeScale + 0.5);
-                    timeInTicksAfterLastTempoChange = 0;
-                    timeScale = timeUnitsPerTick(microsecondsPerQuarterNote);
+#if TUNE_LOG
+                    fprintf(TuneLog, "microsecondsPerQuarterNote=%u\n", microsecondsPerQuarterNote);
+#endif
+                    currentTempo = addTempoMark(tickTime,tockTime,microsecondsPerQuarterNote);
                     break;
                 }
                 default:
@@ -346,49 +424,55 @@ void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_
             auto kind = c>>4;
             unsigned virtualChannel = channelRemap[c&0xF];
             if((kind < 0xF && virtualChannel==~0u) || kind==0xC) {
-                virtualChannel = myChannelMap.size();
-                myChannelMap.pushBack(Channel());
+                virtualChannel = tune.myChannelMap.size();
+                tune.myChannelMap.pushBack(Channel());
                 channelRemap[c&0xF] = virtualChannel;
+#if TUNE_LOG
+                fprintf(TuneLog, "virtual channel %d = physical channel %d\n", int(virtualChannel), int(c&0xF));
+#endif
             }
-            Event::timeType time = timeAtLastTempoChange + unsigned(timeInTicksAfterLastTempoChange*timeScale + 0.5);
-            switch(kind) {
+             switch(kind) {
                 case 0x8:                       // Note off
                 case 0x9: {                     // Note on (though it's really "note off" if velocity is 0).
-                    Event e(time, virtualChannel, kind==0x8 || first[1]==0 ? Event::noteOff : Event::noteOn);
+                    Event e(tockTime, virtualChannel, kind==0x8 || first[1]==0 ? Event::noteOff : Event::noteOn);
                     e.myNote = first[0] & 0x7F;
                     e.myVelocity = first[1] & 0x7F;
-                    myEventSeq.pushBack(e);
+                    tune.myEventSeq.pushBack(e);
                     first += 2;
                     break;
                 }
                 case 0xA: {                     // Note Aftertouch
-                    Event e(time, virtualChannel, Event::noteAfterTouch);
+                    Event e(tockTime, virtualChannel, Event::noteAfterTouch);
                     e.myNote = first[0] & 0x7F;
                     e.myAfterTouch = first[1] & 0x7F;
+                    tune.myEventSeq.pushBack(e);
                     first += 2;
                     break;
                 }
                 case 0xB: {                     // Controller change
-                    Event e(time, virtualChannel, Event::controlChange);
+                    Event e(tockTime, virtualChannel, Event::controlChange);
                     e.myControllerNumber = first[0] & 0x7F;
                     e.myControllerValue = first[1] & 0x7F;
+                    tune.myEventSeq.pushBack(e);
                     first += 2;
                     break;
                 }
                 case 0xC: {                      // Program change
-                    myChannelMap.myChannels[virtualChannel].myProgram = first[0] & 0x7F;
+                    tune.myChannelMap.myChannels[virtualChannel].myProgram = first[0] & 0x7F;
                     first += 1;
                     break;
                 }
                 case 0xD: {                     // Channel aftertouch
-                    Event e(time, virtualChannel, Event::channelAfterTouch);
+                    Event e(tockTime, virtualChannel, Event::channelAfterTouch);
                     e.myAfterTouch = first[1] & 0x7F;
+                    tune.myEventSeq.pushBack(e);
                     first += 2;
                     break;  
                 }
                 case 0xE: {                     // Pitch bend
-                    Event e(time, virtualChannel, Event::channelAfterTouch);
+                    Event e(tockTime, virtualChannel, Event::channelAfterTouch);
                     e.myPitchBend = first[0] & 0x7F | (first[1] & 0x7F)<<7;
+                    tune.myEventSeq.pushBack(e);
                     first += 2;
                     break;
                 }
@@ -400,7 +484,7 @@ void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_
                 }
                 default:
                     Assert(0);
-                    return reportError("Low bit of status not set?");
+                    throwError("High bit of status not set");
                     break;
             }
             status = c;
@@ -409,33 +493,11 @@ void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_
     // Should report warninga about missing end-of-track?
 }
 
-#if ASSERTIONS
-bool Tune::assertOkay() const {
-    NoteTracker<const Event*> on(*this, nullptr);
-    unsigned lastTime = 0;
-    for( const Event& e: events() ) {
-        Assert(lastTime<=e.time());
-        lastTime = e.time();
-        switch( e.kind() ) {
-            case Event::noteOn:
-                Assert(!on[e]);
-                on[e] = &e;
-                break;
-            case Event::noteOff:
-                Assert(on[e]);
-                on[e] = nullptr;
-                break;
-        }
-    }
-    return true;
-}
-#endif
-
-void Tune::canonicalizeEvents() {
+void Tune::parser::canonicalizeEvents() {
     std::vector<Event> missing;
     const unsigned nullTime = ~0u;
-    NoteTracker<Event*> on(*this,nullptr);
-    auto& seq = myEventSeq.myEvents;
+    NoteTracker<Event*> on(tune,nullptr);
+    auto& seq = tune.myEventSeq.myEvents;
     unsigned lastTime = 0;
     for( Event& e: seq )
         switch( e.kind() ) {
@@ -469,7 +531,7 @@ void Tune::canonicalizeEvents() {
     // Now check for missing final "off note" events.
     on.forEach( [&]( Event* event ){
         if( event ) {
-            // Missing event.  Insert one.
+            // Last "on note" is missing a following "off note".  Create an "note off" for it.
             Event final(lastTime,event->channel(),Event::noteOff);
             final.setNote(event->note(),0);
             missing.push_back(final);
@@ -477,7 +539,9 @@ void Tune::canonicalizeEvents() {
     });
     // Insert extra off events first.  Stable sort will keep them in front of following on events.
     seq.insert(seq.begin(), missing.begin(), missing.end());
-    myEventSeq.sortByTime();
+    std::stable_sort(seq.begin(),seq.end(),[](const Event& x, const Event& y) {
+        return x.time()<y.time();
+    });
     // nulled events are now last.  Chop them off.
     auto z = seq.end();
     while(z>seq.begin() && z[-1].time()==nullTime)
@@ -485,28 +549,35 @@ void Tune::canonicalizeEvents() {
     seq.resize(z-seq.begin());
 }
 
-void Tune::parse(const uint8_t* first, const uint8_t* last) {
+void Tune::parser::parseFile(const uint8_t* first, const uint8_t* last) {
     Assert(first<=last);
-    clear();
-    myReadStatus.clear();
+    tune.clear();
+    tune.myReadStatus.clear();
     // Read header
     MidiHeader h;
     first = readHeader(h, first, last, "MThd");
     if(!first) 
-        return reportError("bad MThd header");
+        throwError("bad MThd header");
     Assert(h.format<=1);
     Assert(h.chunkSize==6);
     if(h.format==0) {
         if(h.numTracks!=1) 
-            return reportError("format 0 must have one track, not %u tracks", h.numTracks);
+            throwError("format 0 must have one track, not %u tracks", h.numTracks);
     } else {
         if(h.numTracks<=0) 
-            return reportError("nonzero format 0 shold have at least one track");
+            throwError("nonzero format 0 shold have at least one track");
     }
     if(h.division&0x8000)
-        return reportError("SMTPE not implemented");
+        throwError("SMTPE not implemented");
     else
         myTicksPerQuarterNote = h.division;   
+#if TUNE_LOG
+    fprintf(TuneLog,"format=%d numTracks=%d division=%d\n",int(h.format),int(h.numTracks),int(h.division));
+#endif
+    // Initialized the tempoMap
+    tempoMap.resize(2);
+    assignTempo(tempoMap[0],0,0);       // Time zero
+    assignTempo(tempoMap[1],~0u,~0u);   // Approximation of time infinity
 
     std::vector<ChannelMap::channelInfo> channelNames;
 
@@ -515,30 +586,56 @@ void Tune::parse(const uint8_t* first, const uint8_t* last) {
         MidiTrackHeader t;
         first = readHeader(t, first, last, "MTrk");
         if(!first)
-            return reportError("track %u has bad MTrk header", i);
+            throwError("track %u has bad MTrk header", i);
         if(t.chunkSize > size_t(last-first))
-            return reportError("track %u has bad size", i);
-        unsigned virtualChannelBase = myChannelMap.size();
+            throwError("track %u has bad size", i);
+        unsigned virtualChannelBase = tune.myChannelMap.size();
         ChannelMap::channelInfo c;
-        parseTrack(c.name, first, first+t.chunkSize);
-        if( !myReadStatus.empty() )
-            return;
-        for(unsigned i=virtualChannelBase; i<myChannelMap.size(); ++i ) {
+        parseTrack(first, first+t.chunkSize);
+        for(unsigned i=virtualChannelBase; i<tune.myChannelMap.size(); ++i ) {
             c.channel = i;
-            c.program = myChannelMap[i].program();
+            c.program = tune.myChannelMap[i].program();
+            c.name = trackName;         // Tentative name.  
             channelNames.push_back(c);
         }
         first += t.chunkSize;
     }
+    // Fix up so that on/off are properly paired.
     canonicalizeEvents();
 
     // Finish setting up myChannelMap
-    myChannelMap.assign(channelNames.data(), channelNames.data()+channelNames.size());
-
-    Assert(assertOkay());
+    tune.myChannelMap.assign(channelNames.data(), channelNames.data()+channelNames.size());
 }
 
+//==================================== Tune ====================================
+
+#if ASSERTIONS
+bool Tune::assertOkay() const {
+    NoteTracker<const Event*> on(*this, nullptr);
+    unsigned lastTime = 0;
+    for( const Event& e: events() ) {
+        Assert(lastTime<=e.time());
+        lastTime = e.time();
+        switch( e.kind() ) {
+            case Event::noteOn:
+                Assert(!on[e]);
+                on[e] = &e;
+                break;
+            case Event::noteOff:
+                Assert(on[e]);
+                on[e] = nullptr;
+                break;
+        }
+    }
+    return true;
+}
+#endif
+
 bool Tune::readFromFile(const std::string& filename) {
+#if TUNE_LOG
+    TuneLog = std::fopen(TuneLogFileName,"w+");
+    Assert(TuneLog);
+#endif
     FILE* f = std::fopen(filename.c_str(),"rb");
     if(!f) {
         myReadStatus = "cannot open file " + filename + ": " + std::strerror(errno);
@@ -552,11 +649,20 @@ bool Tune::readFromFile(const std::string& filename) {
     fclose(f);
     Assert(s==fsize);
     if(s>=0) {
-        parse(buf, buf+s);
+        parser p(*this);
+        try {
+            p.parseFile(buf, buf+s);
+            Assert(assertOkay());
+        } catch( parser::badFile ) {
+            Assert(!myReadStatus.empty());
+        }
     } else {
         myReadStatus = "empty file";
     }
     delete[] buf;
+#if TUNE_LOG
+    std::fclose(TuneLog);
+#endif
     return myReadStatus.empty();
 };
 

@@ -44,7 +44,7 @@ static void CopyTuneToWaPlot(WaPlot& plot, const Midi::Tune& tune) {
     plot.clear();
     tune.forEachNote( [&]( const Midi::Event& on, const Midi::Event& off ) {
         Assert(on.channel()==off.channel());
-        plot.insertNote(Midi::PitchOfNote(on.note()), (off.time()-on.time())*Midi::SecondsPerTimeUnit, on.velocity(), on.channel());
+        plot.insertNote(Midi::PitchOfNote(on.note()), (off.time()-on.time())*Midi::SecondsPerTock, on.velocity(), on.channel());
     });
 }
 
