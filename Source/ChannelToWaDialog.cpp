@@ -73,7 +73,7 @@ void ChannelToWaDialog::setupMidiPlayer(Midi::Player& player) {
             w = TheWaSetCollection.find(i.name);
         } else {
             if( w ) {
-                player.setInstrument(i.channel, new WaInstrument(tune.ticksPerSecond(), *w));
+                player.setInstrument(i.channel, new WaInstrument(*w));
             } else {
                 // No Waset specified
             }

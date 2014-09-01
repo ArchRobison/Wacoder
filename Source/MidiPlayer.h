@@ -38,8 +38,6 @@ class Player {
     ensembleType myEnsemble;
     /** Units = seconds */
     double myZeroTime;
-    //! Conversion factor for deltaTime per second 
-    float myTicksPerSec;
     std::vector<uint16_t> myDuration;
     EventSeq::iterator myEventPtr;
     EventSeq::iterator myEndPtr;

@@ -79,12 +79,13 @@
     <ClCompile Include="..\..\..\Source\Game.cpp" />
     <ClCompile Include="..\..\..\Source\HorizontalBarMeter.cpp" />
     <ClCompile Include="..\..\..\Source\Midi.cpp" />
+    <ClCompile Include="..\..\..\Source\MidiPlayer.cpp" />
     <ClCompile Include="..\..\..\Source\NimbleDraw.cpp" />
     <ClCompile Include="..\..\..\Source\NimbleSound.cpp" />
     <ClCompile Include="..\..\..\Source\SmallMark.cpp" />
     <ClCompile Include="..\..\..\Source\Synthesizer.cpp" />
     <ClCompile Include="..\..\..\Source\TraceLib.cpp" />
-    <ClCompile Include="..\..\..\Source\TrackToWaDialog.cpp" />
+    <ClCompile Include="..\..\..\Source\ChannelToWaDialog.cpp" />
     <ClCompile Include="..\..\..\Source\VoiceInput.cpp" />
     <ClCompile Include="..\..\..\Source\WaPlot.cpp" />
     <ClCompile Include="..\..\..\Source\WaSet.cpp" />
@@ -105,6 +106,7 @@
     <ClInclude Include="..\..\..\Source\Host.h" />
     <ClInclude Include="..\..\..\Source\Hue.h" />
     <ClInclude Include="..\..\..\Source\LinearTransform1D.h" />
+    <ClInclude Include="..\..\..\Source\MidiPlayer.h" />
     <ClInclude Include="..\..\..\Source\Midi.h" />
     <ClInclude Include="..\..\..\Source\NimbleDraw.h" />
     <ClInclude Include="..\..\..\Source\NimbleSound.h" />
@@ -114,7 +116,7 @@
     <ClInclude Include="..\..\..\Source\StartupList.h" />
     <ClInclude Include="..\..\..\Source\Synthesizer.h" />
     <ClInclude Include="..\..\..\Source\TraceLib.h" />
-    <ClInclude Include="..\..\..\Source\TrackToWaDialog.h" />
+    <ClInclude Include="..\..\..\Source\ChannelToWaDialog.h" />
     <ClInclude Include="..\..\..\Source\Utility.h" />
     <ClInclude Include="..\..\..\Source\WaPlot.h" />
     <ClInclude Include="..\..\..\Source\WaSet.h" />

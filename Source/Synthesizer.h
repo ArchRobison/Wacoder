@@ -108,6 +108,7 @@ public:
     static SimpleSource* allocate( const Waveform& w, float freq=1.0f );
 };
 
+//! Source whose volume can set on the fly in a linear piece-wise fashion.
 class DynamicSource: public Source {
 private:
     const Waveform* waveform;
@@ -127,7 +128,9 @@ public:
     void changeVolume( float newVolume, float deadline, bool release=false );
 };
 
-class MidiSource: public Source {
+//! Source whose envelope can be set on the fly. 
+/** Useful for Attack-sustain-release synthesis */
+class AsrSource: public Source {
     const Waveform* waveform;
     Waveform::timeType waveIndex;
     Waveform::timeType waveDelta;
@@ -140,7 +143,7 @@ class MidiSource: public Source {
     /*override*/ void destroy();
     /*override*/ void receive( const PlayerMessage& m );
 public:
-    static MidiSource* allocate( const Waveform& w, float freq, const Envelope& attack, float speed=1.0f );
+    static AsrSource* allocate( const Waveform& w, float freq, const Envelope& attack, float speed=1.0f );
     void changeEnvelope(Envelope& e, float speed=1.0f );
 };
 

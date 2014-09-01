@@ -218,20 +218,29 @@ void WaSet::writeWaPlot( const char* filename ) const {
 }
 #endif
 
-void WaInstrument::processEvent() {
-    switch( event() ) {
-        case MEK_NoteOn: {
-            if( velocity() ) {
-                MidiTrackReader::futureEvent fe = findNextOffOrOn();
-                float desiredPitch = 440*std::pow(1.059463094f, note()-69);
-                auto wa = myWaCoder.lookup(desiredPitch, float(fe.time/myTickPerSec));
-                float relativeFreq = desiredPitch/wa->freq;
-                SimpleSource* k = SimpleSource::allocate(wa->waveform, relativeFreq);
-                Play(k);
-            }
-            break;
-        }
+WaSet* WaSetCollection::addWaSet(const std::string& name, const std::string& path) {
+    auto i = myMap.insert(std::make_pair(name, (WaSet*)nullptr)).first;
+    if(!i->second) {
+        i->second = new WaSet(path);
     }
+    return i->second;
+}
+
+WaSetCollection TheWaSetCollection;
+
+void WaInstrument::noteOn(const Midi::Event& on, const  Midi::Event& off) {
+    Assert(on.note()==off.note());
+    Assert(on.channel()==off.channel());
+    float desiredPitch = 440*std::pow(1.059463094f, on.note()-69);
+    float duration = (off.time()-on.time())*Midi::SecondsPerTimeUnit;
+    auto wa = myWaSet.lookup(desiredPitch, duration);
+    float relativeFreq = desiredPitch/wa->freq;
+    SimpleSource* k = SimpleSource::allocate(wa->waveform, relativeFreq);
+    Play(k);
+}
+
+void WaInstrument::noteOff(const  Midi::Event& off) {
+    // No action required
 }
 
 void WaInstrument::stop() {

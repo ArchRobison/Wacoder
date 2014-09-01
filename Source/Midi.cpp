@@ -1,41 +1,77 @@
-/* Copyright 2012-2014 Arch D. Robison 
-
-   Licensed under the Apache License, Version 2.0 (the "License"); 
-   you may not use this file except in compliance with the License. 
-   You may obtain a copy of the License at 
-   
-       http://www.apache.org/licenses/LICENSE-2.0 
-       
-   Unless required by applicable law or agreed to in writing, software 
-   distributed under the License is distributed on an "AS IS" BASIS, 
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
-   See the License for the specific language governing permissions and 
-   limitations under the License.
- */
-
 #include "Midi.h"
-#include "Host.h"
-#include "Synthesizer.h"
-#include "WaSet.h"
-#include <cstring>
+#include <cstdio>
 #include <algorithm>
 
-using namespace Synthesizer;
+void SanityCheck() {
+    char buf[1024];
+    FILE* f = std::fopen("C:\\tmp\\midi\\abba-waterloo.mid", "r");
+    long s = fread(buf, 1, 1024, f);
+    Assert(s==1024);
+    fclose(f);
+}
 
-static void ByteSwap( uint16_t& x ) {
+static void ByteSwap(uint16_t& x) {
     x = x<<8 | x>>8;
 }
 
-static void ByteSwap( uint32_t& x ) {
+static void ByteSwap(uint32_t& x) {
     x = x<<24 | x<<8&0xFF0000 | x>>8&0xFF00 | x>>24;
 }
 
+//-----------------------------------------------------------------
+// Header layouts
+// WARNING: compilers may trailing padding.
+// Member headerSize shows the actual number of bytes of the header
+// as represented in a MIDI file.
+//-----------------------------------------------------------------
+
+struct MidiHeader {
+    // Each declaration is 4 bytes
+    char chunkId[4];
+    uint32_t chunkSize;
+    uint16_t format;
+    uint16_t numTracks;
+    uint16_t division;
+    static const size_t headerSize = 14;
+};
+
+static void ByteSwap(MidiHeader& h) {
+    ByteSwap(h.chunkSize);
+    ByteSwap(h.format);
+    ByteSwap(h.numTracks);
+    ByteSwap(h.division);
+}
+
+struct MidiTrackHeader {
+    char chunkId[4];
+    uint32_t chunkSize;
+    static const size_t headerSize = 8;
+};
+
+static void ByteSwap(MidiTrackHeader& t) {
+    ByteSwap(t.chunkSize);
+}
+
+template<typename H>
+static const uint8_t* readHeader(H& h, const uint8_t* first, const uint8_t* last, const char* id) {
+    Assert(H::headerSize<=sizeof(H));
+    if(memcmp(first, id, 4)!=0)
+        return nullptr;
+    Assert(last-first>=H::headerSize);
+    memcpy(&h, first, H::headerSize);
+    first += H::headerSize;
+    ByteSwap(h);
+    return first;
+}
+
+namespace Midi {
+
 //! Reference: http://www.midi.org/techspecs/gm1sound.php
 /** Table here is zero-based (documentation is mysteriously one-based) */
-static const char* MidiProgramNameTable[] = { 
+static const char* ProgramNameTable[] ={
     "Acoustic Grand Piano", // [0]
     "Bright Acoustic Piano",
-    "Electric Grand Piano", 
+    "Electric Grand Piano",
     "Honky-tonk Piano",
     "Electric Piano 1",
     "Electric Piano 2",
@@ -164,591 +200,364 @@ static const char* MidiProgramNameTable[] = {
 };
 
 //! Get string description of value in a MIDI Program Change message. 
-const char* MidiProgramName(int program) {
-    static const unsigned n = sizeof(MidiProgramNameTable)/sizeof(MidiProgramNameTable[0]);
+const char* ProgramName(int program) {
+    static const unsigned n = sizeof(ProgramNameTable)/sizeof(ProgramNameTable[0]);
     Assert(n==128);
-    Assert(strcmp(MidiProgramNameTable[127], "Gunshot")==0);
-    if( unsigned(program)<n )
-        return MidiProgramNameTable[program];
+    Assert(strcmp(ProgramNameTable[127], "Gunshot")==0);
+    if(unsigned(program)<n)
+        return ProgramNameTable[program];
     else
         return "unknown MIDI Program Change program";
 }
 
-//-----------------------------------------------------------------
-// MidiTrack
-//-----------------------------------------------------------------
+struct ChannelMap::channelInfo {
+    std::string name;
+    unsigned program;
+    unsigned channel;   // Virtual channel number
+    static bool lessByName(const channelInfo& x, const channelInfo& y) {
+        return x.name<y.name;
+    }
+    static bool equalByName(const channelInfo& x, const channelInfo& y) {
+        return x.name==y.name;
+    }
+    static bool lessByProgram(const channelInfo& x, const channelInfo& y) {
+        return x.program<y.program;
+    }
+    static bool equalByProgram(const channelInfo& x, const channelInfo& y) {
+        return x.program==y.program;
+    }
+};
 
-const MidiTrack::infoType& MidiTrack::getInfo() const {
-    if( !info.isValid ) {
-        info.hasNotes = false;
-        info.firstProgram = -1;
-        MidiTrackReader mtr;
-        for( mtr.setTrack(*this); ; mtr.next() ) {
-            switch(mtr.event()) {
-                case MEK_EndOfTrack:
-                    goto done;
-                case MEK_TrackName:
-                    info.trackName = mtr.text();
-                    break;
-                case MEK_Comment:
-                    info.firstComment = mtr.text();
-                    break;
-                case MEK_ProgramChange:
-                    info.firstProgram = mtr.program();
-                    break;
-                case MEK_NoteOn:
-                case MEK_NoteOff:
-                    info.hasNotes = true;
-                    if( !info.trackName.empty() )
-                        goto done;
-                    break;
+void ChannelMap::assign(channelInfo* first, channelInfo* last) {
+    Assert( myChannels.size() == last-first );
+    // See if we can use the existing names as unique identifiers
+    std::sort(first, last, channelInfo::lessByName);
+    auto i = std::adjacent_find(first, last, channelInfo::equalByName);
+    if(i!=last) {
+        // Nams were not unique.
+        // See if we can use the existing program names as unique identifiers
+        std::sort(first, last, channelInfo::lessByProgram);
+        i = std::adjacent_find(first, last, channelInfo::equalByProgram);
+        if(i==last) {
+            // Programs are unique.  Convert them to names.
+            for(auto j=first; j!=last; ++j)
+                j->name = Midi::ProgramName(j->program);
+        } else {
+            // Fall back to channel number and program name.  Channel numbers are unqiue.  Program name is informational.
+            for(auto j=first; j!=last; ++j) {
+                char buf[20];
+                std::sprintf(buf, "%u. ", j->channel);
+                j->name = std::string(buf) + Midi::ProgramName(j->program);
             }
         }
-done:
-        info.isValid = true;
+        std::sort(first, last, channelInfo::lessByName);
     }
-    return info;
+    // Initialized the "sorted by name" vector.
+    mySortedByName.resize(myChannels.size());
+    auto j = mySortedByName.begin();
+    for( auto i=first; i<last; ++i, ++j ) {
+        myChannels[i->channel].myName = i->name;
+        *j = i->channel;
+    }
+#if ASSERTIONS
+    for( unsigned k=0; k<myChannels.size(); ++k )
+        Assert( findByName(myChannels[k].name())==k );
+#endif
 }
 
-//-----------------------------------------------------------------
-// MidiTrackReader
-//-----------------------------------------------------------------
+unsigned ChannelMap::findByName(const std::string& name) const {
+    auto i = mySortedByName.begin();
+    auto j = mySortedByName.end();
+    if( i<j ) {
+        while(j-i>1) {
+            auto m = i + (j-i)/2u;
+            if(name < myChannels[*m].name())
+                j = m;
+            else
+                i = m;
+        }
+        Assert(j-i==1);
+        if(myChannels[*i].name()==name)
+            return *i;
+    }
+    return ~0u;
+}
 
-unsigned MidiTrackReader::readVariableLen() {
+void Tune::reportError(const char* format, unsigned value) {
+    char buf[128];
+    Assert(std::strlen(format) + 8 <= sizeof(buf));
+    sprintf(buf, format, value);
+    myReadStatus = buf;
+}
+
+unsigned Tune::parseVariableLen(const uint8_t*& first, const uint8_t* last) {
     unsigned value = 0;
-    byte c;
+    uint8_t c;
     do {
-        c = readByte();
+        if( first>=last ) {
+            myReadStatus = "truncated value";
+            return value;
+        }
+        c = *first++;
         value = value*128 + (c&0x7F);
-    } while( c&0x80 );
+    } while(c&0x80);
     return value;
 }
 
-void MidiTrackReader::readDeltaAndEvent() {
-retry:
-    if( myPtr>=myEnd ) {
-        myTime = ~0u;
-        myEvent = MEK_EndOfTrack;   // Add missing event
-    } else {
-        myTime += readVariableLen();
-        // MIDI files sometimes omit the status byte if it is the same as for the previous event
-        unsigned char c = *myPtr&0x80 ? *myPtr++ : myStatus;
-        if( c==0xFF ) {
+void Tune::parseTrack(std::string& trackName, const uint8_t* first, const uint8_t* last) {
+    // To minimize round-off error, the "current time" is split into two parts.
+    Event::timeType timeAtLastTempoChange = 0;      // In our Event time units
+    unsigned timeInTicksAfterLastTempoChange = 0;   // In MIDI "delta time"
+    double timeScale = timeUnitsPerTick(500000);    // Conversion to our units from MIDI ticks.
+
+    unsigned status = 0;
+    unsigned channelRemap[16];
+    for( size_t i=0; i<16; ++i )
+        channelRemap[i] = ~0u;
+    size_t virtualChannelBase = myChannelMap.size();
+    while( first<last ) {
+        timeInTicksAfterLastTempoChange += parseVariableLen(first, last);
+        // MIDI files sometimes omit the status byte if it is the same as for the previous event.
+        // Search Internet for "running status" to learn more.
+        unsigned char c = *first&0x80 ? *first++ : status;
+        if(c==0xFF) {
             // MetaEvent
-            byte type = readByte();
-            myEvent = MidiEventKind(MIDI_META(type));
-            myLen = readVariableLen();
-            // Leave myPtr pointing to variable-length data
-            Assert( myLen<=size_t(myEnd-myPtr) );
-#if ASSERTIONS
-            switch( myEvent ) {
-                case MEK_Port:
-                    Assert( myLen==1 );
+            uint8_t type = *first++;
+            unsigned len = parseVariableLen(first,last);
+            switch(type) {
+                case 0x3:                       // Track name
+                    trackName = std::string((const char*)first, len);
+                    break;
+                case 0x2F:                      // End of track
+                    return;
+                case 0x51: {                    // Set tempo
+                    Assert(len==3);
+                    unsigned microsecondsPerQuarterNote = first[0]<<16 | first[1]<<8 | first[2];
+                    timeAtLastTempoChange += unsigned(timeInTicksAfterLastTempoChange*timeScale + 0.5);
+                    timeInTicksAfterLastTempoChange = 0;
+                    timeScale = timeUnitsPerTick(microsecondsPerQuarterNote);
+                    break;
+                }
+                default:
                     break;
             }
-#endif
+            first += len;
         } else {
-            myEvent = MidiEventKind(c>>4);
-            switch(myEvent) {
-                case 0xF:                       // SysEx event - skip it
-                    myLen = readVariableLen();
-                    Assert( myLen<=size_t(myEnd-myPtr) );
-                    Assert( myPtr[myLen-1]==0xF7 );
-                    next();
-                    goto retry;
-                case MEK_PitchBend:
-                case MEK_NoteOff:
-                case MEK_NoteOn:
-                case MEK_ControllerChange:
-                    myStatus = c;
-                    // Leave myPointer pointing to param1
-                    myLen = 2;
+            auto kind = c>>4;
+            unsigned virtualChannel = channelRemap[c&0xF];
+            if((kind < 0xF && virtualChannel==~0u) || kind==0xC) {
+                virtualChannel = myChannelMap.size();
+                myChannelMap.pushBack(Channel());
+                channelRemap[c&0xF] = virtualChannel;
+            }
+            Event::timeType time = timeAtLastTempoChange + unsigned(timeInTicksAfterLastTempoChange*timeScale + 0.5);
+            switch(kind) {
+                case 0x8:                       // Note off
+                case 0x9: {                     // Note on (though it's really "note off" if velocity is 0).
+                    Event e(time, virtualChannel, kind==0x8 || first[1]==0 ? Event::noteOff : Event::noteOn);
+                    e.myNote = first[0] & 0x7F;
+                    e.myVelocity = first[1] & 0x7F;
+                    myEventSeq.pushBack(e);
+                    first += 2;
                     break;
-                case MEK_ProgramChange:
-                    myStatus = c;
-                    // Leave myPointer pointing to param1
-                    myLen = 1;
+                }
+                case 0xA: {                     // Note Aftertouch
+                    Event e(time, virtualChannel, Event::noteAfterTouch);
+                    e.myNote = first[0] & 0x7F;
+                    e.myAfterTouch = first[1] & 0x7F;
+                    first += 2;
                     break;
+                }
+                case 0xB: {                     // Controller change
+                    Event e(time, virtualChannel, Event::controlChange);
+                    e.myControllerNumber = first[0] & 0x7F;
+                    e.myControllerValue = first[1] & 0x7F;
+                    first += 2;
+                    break;
+                }
+                case 0xC: {                      // Program change
+                    myChannelMap.myChannels[virtualChannel].myProgram = first[0] & 0x7F;
+                    first += 1;
+                    break;
+                }
+                case 0xD: {                     // Channel aftertouch
+                    Event e(time, virtualChannel, Event::channelAfterTouch);
+                    e.myAfterTouch = first[1] & 0x7F;
+                    first += 2;
+                    break;  
+                }
+                case 0xE: {                     // Pitch bend
+                    Event e(time, virtualChannel, Event::channelAfterTouch);
+                    e.myPitchBend = first[0] & 0x7F | (first[1] & 0x7F)<<7;
+                    first += 2;
+                    break;
+                }
+                case 0xF: {                     // SysEx event - skip it
+                    unsigned len = parseVariableLen(first, last);
+                    Assert(first[len-1]==0xF7);
+                    first += len;
+                    break;
+                }
                 default:
                     Assert(0);
+                    return reportError("Low bit of status not set?");
+                    break;
             }
+            status = c;
         }
     }
+    // Should report warninga about missing end-of-track?
 }
 
-std::string MidiTrackReader::text() const {
-    Assert( event()==MEK_Comment||event()==MEK_TrackName );
-    return std::string( (const char*)myPtr, myLen );
+#if ASSERTIONS
+bool Tune::assertOkay() const {
+    NoteTracker<const Event*> on(*this, nullptr);
+    unsigned lastTime = 0;
+    for( const Event& e: events() ) {
+        Assert(lastTime<=e.time());
+        lastTime = e.time();
+        switch( e.kind() ) {
+            case Event::noteOn:
+                Assert(!on[e]);
+                on[e] = &e;
+                break;
+            case Event::noteOff:
+                Assert(on[e]);
+                on[e] = nullptr;
+                break;
+        }
+    }
+    return true;
 }
+#endif
 
-MidiTrackReader::futureEvent MidiTrackReader::findNextOffOrOn() const {
-    futureEvent fe;
-    Assert(event()==MEK_NoteOn||event()==MEK_NoteOff);
-    MidiTrackReader mtr(*this);
-    mtr.myTime = 0;
-    for(;;) {
-        mtr.next();
-        switch( mtr.event() ) {
-            case MEK_NoteOff:
-            case MEK_NoteOn:
-                if( mtr.note()==note() && mtr.channel()==channel() ) {
-                    fe.velocity = mtr.velocity();
-                    goto done;
+void Tune::canonicalizeEvents() {
+    std::vector<Event> missing;
+    const unsigned nullTime = ~0u;
+    NoteTracker<Event*> on(*this,nullptr);
+    auto& seq = myEventSeq.myEvents;
+    unsigned lastTime = 0;
+    for( Event& e: seq )
+        switch( e.kind() ) {
+            case Event::noteOn:
+                if( Event*& f = on[e] ) {
+                    Assert(e.time()>=f->time());
+                    if( e.time()>f->time() ) {
+                        // "note off" is missing.  Create one with same time as second "note on".
+                        Event g(e.time(), e.channel(), Event::noteOff);
+                        g.setNote(e.note(), e.velocity());
+                        missing.push_back(g);
+                        f = nullptr;
+                    } else {
+                        // Have a duplicate "note on".  Mark it for erasure.
+                        e.myTime = nullTime;
+                    }
+                }
+                on[e] = &e;
+                break;
+            case Event::noteOff:
+                if( Event*& f = on[e]) {
+                    f = nullptr;
+                    if(e.time()>lastTime)
+                        lastTime = e.time();
+                } else {
+                    // "note off" with no preceding "note on".  Mark it for erasure.
+                    e.myTime = nullTime;
                 }
                 break;
-            case MEK_EndOfTrack:
-                fe.velocity = 0;        // Really should be a "don't know" value.
-                goto done;
         }
-    }
-done:
-    fe.event = mtr.event();
-    fe.time = mtr.myTime;
-    return fe;
-}
-
-#if ASSERTIONS
-static void DumpString( FILE* f, const byte* s, size_t n, bool newline=false ) {
-    fprintf(f,"\"");
-    for( size_t i=0; i<n; ++i )
-        fprintf(f,"%c",s[i]);
-    fprintf(f,"\"%s",newline?"\n":0);
-}
-
-void DumpTrack(const char* outputFilename, const MidiTrack& track) {
-    FILE* f = fopen(outputFilename, "w+");
-    if(!f) {
-        return;
-    }
-    MidiTrackReader mtr;
-    mtr.setTrack(track);
-    for(;;) {
-        const char* hint = "";
-        switch( mtr.event() ) {
-            case MEK_TrackName:
-                fprintf(f,"time=%d metaevent=%x [TrackName] len=%d ",mtr.time(),mtr.event()-0x10, mtr.myLen );
-                DumpString(f,mtr.myPtr,mtr.myLen,true);
-                break;
-            case MEK_NoteOff:
-            case MEK_NoteOn:
-                fprintf(f, "time=%d event=%x channel=%d [note %s] note=%d velocity=%d\n", mtr.time(), mtr.event(), mtr.channel(), mtr.event()==MEK_NoteOn ? "on" : "off",mtr.note(), mtr.velocity());
-                break;
-            case MEK_ControllerChange:
-                fprintf(f, "time=%d event=%x channel=%d [controller change] len=%d c=%d v=%d\n", mtr.time(), mtr.event(), mtr.channel(), mtr.myPtr[0], mtr.myPtr[1]);
-                break;
-            case MEK_ProgramChange:
-                fprintf(f, "time=%d event=%x channel=%d [program change] program=%d [%s]\n", mtr.time(), mtr.event(), mtr.channel(), mtr.program(), MidiProgramName(mtr.program()));
-                break;
-            case MEK_PitchBend:
-                hint = " [pitch bend]";
-                goto simple;
-            case MEK_EndOfTrack:
-                goto done;
-            default:
-simple:
-                fprintf(f,"time=%d event=%x%s len=%d\n",mtr.time(), mtr.event(), hint, mtr.myLen);
-                break;
+    // Now check for missing final "off note" events.
+    on.forEach( [&]( Event* event ){
+        if( event ) {
+            // Missing event.  Insert one.
+            Event final(lastTime,event->channel(),Event::noteOff);
+            final.setNote(event->note(),0);
+            missing.push_back(final);
         }
-        mtr.next();
-    }
-done:
-    fclose(f);
-}
-#endif
-
-//-----------------------------------------------------------------
-// Header layouts
-// WARNING: compilers may trailing padding.
-// Member headerSize shows the actual number of bytes of the header
-// as represented in a MIDI file.
-//-----------------------------------------------------------------
-
-struct MidiHeader {
-    // Each declaration is 4 bytes
-    char chunkId[4];
-    uint32_t chunkSize;
-    uint16_t format;
-    uint16_t numTracks;
-    uint16_t division;
-    static const size_t headerSize = 14;
-};
-
-static void ByteSwap( MidiHeader& h ) {
-    ByteSwap(h.chunkSize);
-    ByteSwap(h.format);
-    ByteSwap(h.numTracks);
-    ByteSwap(h.division);
+    });
+    // Insert extra off events first.  Stable sort will keep them in front of following on events.
+    seq.insert(seq.begin(), missing.begin(), missing.end());
+    myEventSeq.sortByTime();
+    // nulled events are now last.  Chop them off.
+    auto z = seq.end();
+    while(z>seq.begin() && z[-1].time()==nullTime)
+        --z;
+    seq.resize(z-seq.begin());
 }
 
-struct MidiTrackHeader {
-    char chunkId[4];
-    uint32_t chunkSize;
-    static const size_t headerSize = 8;
-};
-
-static void ByteSwap( MidiTrackHeader& t ) {
-    ByteSwap(t.chunkSize);
-}
-
-template<typename H>
-static const byte* readHeader( H& h, const byte* first, const byte* last, const char* id ) {
-    Assert( H::headerSize<=sizeof(H) );
-    if( memcmp(first, id, 4)!=0 )
-        return nullptr;
-    Assert( last-first>=H::headerSize );
-    memcpy( &h, first, H::headerSize );
-    first += H::headerSize;
-    ByteSwap(h);
-    return first;
-}
-
-//-----------------------------------------------------------------
-// MidiTune
-//-----------------------------------------------------------------
-
-void MidiTune::noteError( const char* format, unsigned value ) {
-    Assert(strlen(format) + 8 <= sizeof(myReadStatus) );
-    sprintf(myReadStatus,format,value);
-}
-
-void MidiTune::clear() {
-    myTrack.clear();
-    myReadStatus[0] = 0;
-}
-
-void MidiTune::assign(const byte* first, const byte* last) {
+void Tune::parse(const uint8_t* first, const uint8_t* last) {
+    Assert(first<=last);
     clear();
+    myReadStatus.clear();
     // Read header
     MidiHeader h;
-    first = readHeader(h,first,last,"MThd");
+    first = readHeader(h, first, last, "MThd");
     if(!first) 
-        return noteError("bad MThd header");
-    Assert( h.format<=1 );
-    Assert( h.chunkSize==6 );
-    if( h.format==0 ) {
-        if( h.numTracks!=1 ) 
-            return noteError("format 0 must have one track, not %u tracks", h.numTracks);
+        return reportError("bad MThd header");
+    Assert(h.format<=1);
+    Assert(h.chunkSize==6);
+    if(h.format==0) {
+        if(h.numTracks!=1) 
+            return reportError("format 0 must have one track, not %u tracks", h.numTracks);
     } else {
-        if( h.numTracks<=0 ) {
-            return noteError("nonzero format 0 shold have at least one track");
-        }
+        if(h.numTracks<=0) 
+            return reportError("nonzero format 0 shold have at least one track");
     }
-    if( h.division&0x8000 ) 
-        return noteError("SMTPE not implemented");
-    else 
-        myTickPerSec = 2*float(h.division);    // 120 beats per minute
+    if(h.division&0x8000)
+        return reportError("SMTPE not implemented");
+    else
+        myTicksPerQuarterNote = h.division;   
 
-    // Allocate trackDesc structures
-    myTrack.resize(h.numTracks);
-    // Read each track as raw bytes
-    for( unsigned i=0; i<h.numTracks; ++i ) {
+    std::vector<ChannelMap::channelInfo> channelNames;
+
+    // Parse each track 
+    for( unsigned i=0; i<h.numTracks; ++i) {
         MidiTrackHeader t;
-        first = readHeader(t,first,last,"MTrk");
-        if( !first ) 
-            return noteError("track %u has bad MTrk header", i);
-        myTrack[i].data.assign( first, t.chunkSize );
+        first = readHeader(t, first, last, "MTrk");
+        if(!first)
+            return reportError("track %u has bad MTrk header", i);
+        if(t.chunkSize > size_t(last-first))
+            return reportError("track %u has bad size", i);
+        unsigned virtualChannelBase = myChannelMap.size();
+        ChannelMap::channelInfo c;
+        parseTrack(c.name, first, first+t.chunkSize);
+        if( !myReadStatus.empty() )
+            return;
+        for(unsigned i=virtualChannelBase; i<myChannelMap.size(); ++i ) {
+            c.channel = i;
+            c.program = myChannelMap[i].program();
+            channelNames.push_back(c);
+        }
         first += t.chunkSize;
     }
+    canonicalizeEvents();
+
+    // Finish setting up myChannelMap
+    myChannelMap.assign(channelNames.data(), channelNames.data()+channelNames.size());
+
+    Assert(assertOkay());
 }
 
-bool MidiTune::readFromFile( const char* filename ) {
-    myReadStatus[0] = 0;
-    FILE* f = fopen(filename,"rb");
-    if( !f ) {
-        noteError("cannot open file");
+bool Tune::readFromFile(const std::string& filename) {
+    FILE* f = std::fopen(filename.c_str(),"rb");
+    if(!f) {
+        myReadStatus = "cannot open file " + filename + ": " + std::strerror(errno);
         return false;
     }
-    fseek(f,0,SEEK_END);
+    std::fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
-    fseek(f,0,SEEK_SET);
-    // FIXME - avoid temporary buffer.
-    byte* buf = new byte[fsize];
-    long s = fread(buf,1,fsize,f);
+    std::fseek(f, 0, SEEK_SET);
+    uint8_t* buf = new uint8_t[fsize];
+    long s = fread(buf, 1, fsize, f);
     fclose(f);
-    Assert( s==fsize );
-    bool result = false;
-    if( s>=0 )
-        assign(buf,buf+s);
+    Assert(s==fsize);
+    if(s>=0) {
+        parse(buf, buf+s);
+    } else {
+        myReadStatus = "empty file";
+    }
     delete[] buf;
-    return myReadStatus[0]==0;
-}
-
-//-----------------------------------------------------------------
-// MidiInstrument subclasses
-//-----------------------------------------------------------------
-
-static Waveform MidiKeyWave;  
-static float MidiKey440AFreq;
-
-static Envelope MidiKeyAttack;
-static Envelope MidiKeyRelease;
-
-struct KeySoundInit {
-    KeySoundInit();
-} static TheKeySoundInit;
-
-KeySoundInit::KeySoundInit() {
-    double pi = 3.14159265358979;
-    const size_t keyLength = 3207;
-    MidiKeyWave.resize(keyLength);
-    for( int i=0; i<keyLength; ++i ) 
-        MidiKeyWave[i] = 0;
-#if 1
-    // Organ
-    double phase = 0;
-    for( int h=1; h<=19; h+=2 ) {
-        for( int i=0; i<keyLength; ++i ) {
-            double omega = 2*pi/keyLength;
-            const double x = i*(1.0/keyLength);
-            const double a = 0.05;
-            MidiKeyWave[i] += float(sin(phase+i*omega*h))/h;
-        }
-        phase += pi;
-    }
-#else
-    struct rissetType {  // from http://cnx.org/content/m15476/latest/
-        int partialNumber;
-        double intensity;    // in dB
-        double duration;
-        double freqMul;
-        double freqOffset;   // in Hz
-    };
-    rissetType r[11] = {
-        {1,0,1,0.56,0},
-        {2,-3.48,0.9,0.56,1},
-        {3,0,0.65,0.92,0},
-        {4,5.11,0.55,0.92,1.7},
-        {5,8.53,0.325,1.19,0},
-        {6,4.45,0.35,1.7,0},
-        {7,3.29,0.25,2,0},
-        {8,2.48,0.2,2.74,0},
-        {9,2.48,0.15,3,0},
-        {10,0,0.1,3.76,0},
-        {11,2.48,0.075,4.07,0}
-        };
-
-     // ?
-    float phase = 0;
-    for( int j=0; j<11; ++j ) {
-        for( int i=0; i<keyLength; ++i ) {
-            double omega = 2*pi/keyLength;
-            const double x = i*(1.0/keyLength);
-            const double a = 0.05;
-            MidiKeyWave[i] += 0.25f*float(sin(phase+i*omega*r[j].freqMul));
-        }
-    }
-#endif
-    MidiKeyWave.complete();
-    MidiKey440AFreq = 440.f*keyLength/SampleRate;
-
-    MidiKeyAttack.resize(100);
-    for( int i=0; i<100; ++i ) {
-        const double x = i*(1.0/99);
-        MidiKeyAttack[i] = float(x);
-    }
-    MidiKeyAttack.complete(true);
-
-    MidiKeyRelease.resize(100);
-    for( int i=0; i<100; ++i ) {
-        const double x = i*(1.0/100);
-        MidiKeyRelease[i] = float(exp(-4*x));
-    }
-    MidiKeyRelease.complete(false);
-}
-
-class AdditiveInstrument: public MidiInstrument {
-    MidiSource* keyArray[128];
-    int counter;
-#if ASSERTIONS
-    int onLevel[128];
-#endif
-    /*override*/ void processEvent();
-    /*override*/ void stop();
-    void attack( int note );
-    void release( int note );
-public:
-    AdditiveInstrument() {
-#if ASSERTIONS
-        std::fill_n( onLevel,128, 0 );
-#endif
-        std::fill_n( keyArray, 128, (MidiSource*)NULL );
-        counter = 0;
-    }
+    return myReadStatus.empty();
 };
 
-void AdditiveInstrument::attack( int note ) {
-    float freq = MidiKey440AFreq*std::pow(1.059463094f,(note-69))*(1+(counter+=19)%32*(.005f/32));
-    float speed = MidiKeyAttack.size()*(16.f/SampleRate);
-    MidiSource* k = MidiSource::allocate( MidiKeyWave, freq, MidiKeyAttack, speed );
-    keyArray[note] = k;
-    Play( k, velocity()*(1.0f/512) );
-}
-
-void AdditiveInstrument::release( int note ) {
-    Assert(0<=note && note<128);
-    if( MidiSource* k = keyArray[note] ) {
-        k->changeEnvelope( MidiKeyRelease, MidiKeyRelease.size()*(4.0f/SampleRate) );
-        keyArray[note] = NULL;
-    }
-}
-
-void AdditiveInstrument::processEvent() {
-    switch( event() ) {
-        case MEK_NoteOn: {
-            if( velocity()==0 ) 
-                // Some MIDI files use "Note On" with velocity of zero to indicate "Note off".
-                goto off;
-            int n = note() & 0x7F;
-            if( keyArray[n] ) {
-                // "Moonlight Sonata" file seems to have two "NoteOn" without intervening "NoteOff"
-                // Alternative strategy here would be to issue a changeEnvelope to repeat the attack 
-                release(n);
-            }
-            attack(n);
-#if ASSERTIONS
-            ++onLevel[n];
-#endif
-            break;
-        }
-        off:
-        case MEK_NoteOff: {
-            int n = note() & 0x7F;
-            release(n);
-            Assert(onLevel[n]>0);
-#if ASSERTIONS
-            --onLevel[n];
-#endif
-            break;
-        }
-    }
-}
-
-void AdditiveInstrument::stop() {
-    for( size_t i=0; i<sizeof(keyArray)/sizeof(keyArray[0]); ++i ) 
-        release(i);
-}
-
-NameToWaSetMap TheWaSetMap;    //!< Map from ids (e.g. "adr-oom" to WaCoders. 
-
-void LoadWaCoder( const std::string id, const std::string path ) {
-	auto i = TheWaSetMap.insert( std::make_pair(id,(const WaSet*)NULL)).first;
-	if( !i->second ) {
-		i->second = new WaSet(path);
-	}
-}
-
-#if 0 /* Is this code used any more? */
-
-static const WaSet* GetWaCoder( const std::string& filename ) {
-    auto i = TheWaSetMap.insert( std::make_pair(filename,(const WaSet*)NULL)).first;
-    if( !i->second ) {
-        i->second = new WaSet(filename);
-    }
-    return i->second;
-}
-#endif
-
-//-----------------------------------------------------------------
-// MidiPlayer
-//-----------------------------------------------------------------
-
-#define MIDI_LOG 0
-
-#if MIDI_LOG
-static FILE* TheLogFile;
-
-static void OpenLogFile() {
-    if( !TheLogFile ) {
-        TheLogFile = fopen("C:/tmp/midi.log","w");
-    }
-}
-#endif
-
-void MidiPlayer::stop() {
-    for( auto ip = myEnsemble.begin(); ip!=myEnsemble.end(); ++ip ) {
-        MidiInstrument* i = *ip;
-        i->stop();
-        delete i;
-    }
-    myEnsemble.clear();
-}
-
-std::string MidiTrack::trackId( int k ) const {
-    std::string id;
-    getInfo();
-    if( !info.trackName.empty() )
-        id = info.trackName;
-    else if( info.firstProgram!=-1) 
-        id = MidiProgramName(info.firstProgram);
-    else if( !info.firstComment.empty() )
-        id = info.firstComment;
-    else {
-        char buf[20];
-        sprintf(buf,"Track %d",k);
-        id = buf;
-    }
-    return id;
-}
-
-void MidiPlayer::play( const MidiTune& tune, const NameToWaSetMap& trackMap ) {
-    myZeroTime = 0;
-    myTickPerSec = tune.myTickPerSec;
-    Assert(myTickPerSec>0);
-#if MIDI_LOG
-    OpenLogFile();
-#endif
-    Assert( myEnsemble.empty() );
-    int k = 0;
-    for( size_t i=0; i<tune.myTrack.size(); ++i ) {
-        const MidiTrack& t = tune.myTrack[i];
-        MidiTrack::infoType info( t.getInfo() ); 
-        if( info.hasNotes ) {
-            ++k;
-            std::string id = t.trackId(k);
-            MidiInstrument* it;
-            auto j = trackMap.find( id );
-            if( j!=trackMap.end() ) {
-#if HAVE_WriteWaPlot
-                fprintf( TheLogFile, "[%d] %s: %s\n",k,id.c_str(),j->second->name().c_str());
-                char buf[128];
-                sprintf(buf,"C:/tmp/waplot.%d.dat",k);
-                WriteWaPlot(buf,tune->myTrack[i],myTickPerSec);
-#endif
-                it = new WaInstrument(myTickPerSec,*j->second);
-            } else {
-#if MIDI_LOG
-                fprintf( TheLogFile, "%s: (additive)\n",id.c_str());
-#endif
-                it = new AdditiveInstrument();
-            }
-            it->setTrack( tune.myTrack[i] );
-            myEnsemble.push_back(it);
-        }
-    }
-#if MIDI_LOG
-    fflush(TheLogFile);
-#endif
-}
-
-void MidiPlayer::update() {
-    if( !myEnsemble.size() )
-        // Nothing to play
-        return;
-    Assert(myTickPerSec>0);
-    Assert( MidiKey440AFreq>0 );
-
-    // Get absolute time
-    double currentTime = HostClockTime();
-    if( !myZeroTime ) 
-        myZeroTime=currentTime;
-    // Convert to MIDI time
-    MidiTrackReader::timeType t = MidiTrackReader::timeType((currentTime-myZeroTime)*myTickPerSec);
-    for( MidiInstrument*ip : myEnsemble) {
-        MidiInstrument& i = *ip;
-        // Update track i 
-        while( i.event()!=MEK_EndOfTrack && i.time()<=t ) {
-            i.processEvent();
-            i.next();
-        }
-    }
-}
+} // namespace Midi

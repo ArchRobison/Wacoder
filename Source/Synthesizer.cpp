@@ -328,18 +328,18 @@ void DynamicSource::changeVolume( float newVolume, float deadline, bool releaseW
 }
 
 //-----------------------------------------------------------
-// MidiSource
+// AsrSource
 //-----------------------------------------------------------
-static PoolAllocator<MidiSource> MidiSourceAllocator(16,false);
+static PoolAllocator<AsrSource> AsrSourceAllocator(64,false);
 
-MidiSource* MidiSource::allocate( const Waveform& w, float freq, const Envelope& attack, float speed ) {
+AsrSource* AsrSource::allocate( const Waveform& w, float freq, const Envelope& attack, float speed ) {
     Assert( w.size()<<Waveform::timeShift>>Waveform::timeShift == w.size() );
     Assert( w.isCompleted() );
     Assert( 1.f/1000 <= freq && freq <= 1000.f );   // Sanity check
     Assert( 1.f/1000000 <= speed && speed <= 1.0f/20 );
-    MidiSource* s = MidiSourceAllocator.allocate();
+    AsrSource* s = AsrSourceAllocator.allocate();
     if( s ) {
-        new(s) MidiSource;
+        new(s) AsrSource;
         s->waveform = &w;
         s->waveIndex = 0;
         s->waveDelta = Waveform::timeType(freq*Waveform::unitTime);
@@ -354,11 +354,11 @@ MidiSource* MidiSource::allocate( const Waveform& w, float freq, const Envelope&
     return s;
 }
 
-void MidiSource::destroy() {
-    MidiSourceAllocator.destroy(this);
+void AsrSource::destroy() {
+    AsrSourceAllocator.destroy(this);
 }
 
-void MidiSource::receive( const PlayerMessage& m ) {
+void AsrSource::receive( const PlayerMessage& m ) {
     Assert( m.kind==WMK_ChangeEnvelope );
     if( envDelta==0 ) {
         envDelta = m.midi.envDelta;
@@ -371,7 +371,7 @@ void MidiSource::receive( const PlayerMessage& m ) {
     }
 }
 
-unsigned MidiSource::update( float* acc, unsigned n ) {
+unsigned AsrSource::update( float* acc, unsigned n ) {
     unsigned requested = n;
     const Waveform::sampleType* w = waveform->begin();
     Waveform::timeType wrap = waveform->limit(); 
@@ -417,7 +417,7 @@ unsigned MidiSource::update( float* acc, unsigned n ) {
     return requested-n;
 }
 
-void MidiSource::changeEnvelope(Envelope& e, float speed) {
+void AsrSource::changeEnvelope(Envelope& e, float speed) {
     // Send message
     PlayerMessage* m = PlayerMessageQueue.startPush();
     m->kind = WMK_ChangeEnvelope;

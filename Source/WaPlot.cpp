@@ -108,12 +108,12 @@ void WaPlot::drawNotesAndWas( NimblePixMap& window ) {
     }
 }
 
-void WaPlot::insertNote( float pitch, float duration, int velocity, int trackId ) {
-	Assert(unsigned(trackId)<myNotes.maxId);
+void WaPlot::insertNote( float pitch, float duration, int velocity, unsigned channelId ) {
+    Assert(unsigned(channelId)<myNotes.maxId);
     noteMark c;
     c.setFromPitchAndDuration(pitch,duration);
     c.r = velocity;
-    myNotes.set[c].set(trackId);
+    myNotes.set[c].set(channelId);
     xLimit.include(c.x);
     yLimit.include(c.y);
     rLimit.include(c.r);

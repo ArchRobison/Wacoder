@@ -98,7 +98,7 @@ public:
         clear();
     }
     void clear();
-    void insertNote( float pitch, float duration, int velocity, int trackId );
+    void insertNote( float pitch, float duration, int velocity, unsigned channelId );
     void setTrackHues( HueMap h ) {
         myNotes.chosen = h;
     }

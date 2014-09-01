@@ -64,7 +64,7 @@ KeySoundInit::KeySoundInit() {
             double omega = 2*pi/keyLength;
             const double x = i*(1.0/keyLength);
             const double a = 0.05;
-            MidiKeyWave[i] += 0.25f*float(sin(phase+i*omega*r[j].freqMul));
+            KeyWave[i] += 0.25f*float(sin(phase+i*omega*r[j].freqMul));
         }
     }
 #endif
@@ -87,20 +87,14 @@ KeySoundInit::KeySoundInit() {
 }
 
 class AdditiveInstrument : public Midi::Instrument {
-    Synthesizer::MidiSource* keyArray[128];
+    Synthesizer::AsrSource* keyArray[128];
     int counter;
-#if ASSERTIONS
-    int onLevel[128];
-#endif
     /*override*/ void noteOn(const Midi::Event& on, const Midi::Event& off);
     /*override*/ void noteOff(const Midi::Event& off);
     /*override*/ void stop();
 public:
     AdditiveInstrument() {
-#if ASSERTIONS
-        std::fill_n(onLevel, 128, 0);
-#endif
-        std::fill_n(keyArray, 128, (Synthesizer::MidiSource*)nullptr);
+        std::fill_n(keyArray, 128, (Synthesizer::AsrSource*)nullptr);
         counter = 0;
     }
 };
@@ -110,34 +104,35 @@ void AdditiveInstrument::noteOn(const Midi::Event& on, const Midi::Event& off) {
     unsigned v = on.velocity();
     Assert(n==off.note());
     Assert(on.channel()==off.channel());
-    float freq = Key440AFreq*float(std::pow(1.059463094f, (n-69))*(1+(counter+=19)%32*(.005f/32)));
+    // Input parsing should remove on-without-off
+    Assert(!keyArray[n]);
+    float freq = Key440AFreq*(std::pow(1.059463094f, (int(n)-69))*(1+(counter+=19)%32*(.005f/32)));
     float speed = KeyAttack.size()*(16.f/Synthesizer::SampleRate);
-    Synthesizer::MidiSource* k = Synthesizer::MidiSource::allocate(KeyWave, freq, KeyAttack, speed);
+    Synthesizer::AsrSource* k = Synthesizer::AsrSource::allocate(KeyWave, freq, KeyAttack, speed);
+    // N.B. k is nullptr if allocation failed.  
     keyArray[n] = k;
     Play(k, v*(1.0f/512));
-#if ASSERTIONS
-    ++onLevel[n];
-#endif
 }
 
 void AdditiveInstrument::noteOff(const Midi::Event& off) {
     unsigned n = off.note();
     Assert(n<128);
-    if(Synthesizer::MidiSource* k = keyArray[n]) {
+    // Canonicalization of the events should ensure that there was a preceeding noteOn.
+    // However, allocation of the AsrSource may have failed, hence the check here.
+    if( Synthesizer::AsrSource* k = keyArray[n] ) {
         k->changeEnvelope(KeyRelease, KeyRelease.size()*(4.0f/Synthesizer::SampleRate));
-        keyArray[n] = NULL;
+        keyArray[n] = nullptr;
     }
-#if ASSERTIONS
-    Assert(onLevel[n]>0);
-    --onLevel[n];
-#endif
-}
+ }
 
 void AdditiveInstrument::stop() {
     Midi::Event e(0,0,Midi::Event::noteOff);
-    for(size_t i=0; i<sizeof(keyArray)/sizeof(keyArray[0]); ++i) {
-        e.setNote(i,0);
-        noteOff(e);
+    // Send implicit "off" to any keys that are down
+    for(unsigned n=0; n<sizeof(keyArray)/sizeof(keyArray[0]); ++n) {
+        if( keyArray[n] ) {
+            e.setNote(n,0);
+            noteOff(e);
+        }
     }
 }
 
@@ -146,21 +141,22 @@ namespace Midi {
 void Player::clear() {
     for(size_t i=myEnsemble.size(); i-->0;)
         delete myEnsemble[i];
+    myEnsemble.clear();
 }
 
 Player::~Player() {
     clear();
 }
 
-void Player::preparePlay( const Tune& tune) {
+void Player::preparePlay( const Tune& tune ) {
+    clear();
     myTune = &tune;
     myZeroTime = 0;
-    myTicksPerSec = float(tune.ticksPerSecond());
-    Assert(myTicksPerSec>0);
     computeDuration(tune);
     myDurationPtr = myDuration.begin();
     myEventPtr = tune.events().begin();
     myEndPtr = tune.events().end();
+    myEnsemble.resize(tune.channels().size(),nullptr);
 }
 
 void Player::commencePlay() {
@@ -173,47 +169,82 @@ void Player::commencePlay() {
     myTune = nullptr;
 }
 
+void Player::stop() {
+    if( myZeroTime ) {
+        for(Instrument* i: myEnsemble)
+            i->stop();
+        myZeroTime = 0;
+    }
+}
+
+/** Since this routine is tightly tied to method update, please keep it lexical close
+    to that method, so that the correspondence can be checked. */
 void Player::computeDuration( const Tune& tune ) {
     myDuration.clear();
     NoteTracker<std::pair<const Event*, size_t>> noteStart(tune);
     for( const Event& e: tune.events() )
         switch( e.kind() ) {
-            case Event::noteOn: {
-                auto& start = noteStart[e];
-                start.first = &e;
-                start.second = myDuration.size();
-                myDuration.push_back(0);
-                break;
-            }
+            case Event::noteOn:
             case Event::noteOff: {
                 auto& start = noteStart[e];
-                if( start.first ) {
+                if(const Event* on = start.first) {
+                    Assert(on->note()==e.note());
                     // FIXME - should check if difference really fits
-                    myDuration[start.second] = &e-start.first;
+                    myDuration[start.second] = &e-on;
                     start.first = nullptr;
+                }
+                if( e.kind()==Event::noteOn ) {
+                    start.first = &e;
+                    start.second = myDuration.size();
+                    myDuration.push_back(0);
                 }
                 break;
             }
         }
+#if ASSERTIONS
+    noteStart.forEach([](const std::pair<const Event*, size_t>& start) {
+        // Input parsing should canonicalize input so that for any note, 
+        // there is an off for every on, and off precedes next on
+        Assert(!start.first);
+    });
+    auto d = myDuration.begin();
+    Event::timeType t = 0;
+    for(const Event& e: tune.events()) {
+        Assert(e.time()>=t);
+        t = e.time();
+        if( e.kind()==Event::noteOn ) {
+            Assert(d<myDuration.end());
+            const Event& off = (&e)[*d];
+            Assert(e.note()==off.note());
+            Assert(e.channel()==off.channel());
+            ++d;
+        }
+    }
+#endif
 }
 
 void Player::update() {
     if(!myZeroTime)
         // Nothing to play
         return;
-    Assert(myTicksPerSec>0);
     Assert(Key440AFreq>0);
 
     // Get current time in MIDI "tick" units
-    auto t = Event::timeType((HostClockTime()-myZeroTime)*myTicksPerSec);
+    auto t = Event::timeType((HostClockTime()-myZeroTime)/SecondsPerTimeUnit);
 
     // Process MIDI events up to time t
-    while(myEventPtr<myEndPtr && myEventPtr->time()<=t) {
+    for( ; myEventPtr<myEndPtr && myEventPtr->time()<=t; ++myEventPtr) {
         auto& e = *myEventPtr;
         switch(e.kind()) {
-            case Event::noteOn:
-                myEnsemble[e.channel()]->noteOn(e,myEventPtr[*myDurationPtr++]);
+            case Event::noteOn: {
+                const Event& off = myEventPtr[*myDurationPtr];
+                Assert(e.note()==off.note());
+                Assert(e.channel()==off.channel());
+                Instrument* i = myEnsemble[e.channel()];
+                i->noteOn(e,off);
+                ++myDurationPtr;
                 break;
+            }
             case Event::noteOff:
                 myEnsemble[e.channel()]->noteOff(e);
                 break;
