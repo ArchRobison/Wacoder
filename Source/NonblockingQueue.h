@@ -1,21 +1,21 @@
 #ifndef NonblockingQueue_H
 #define NonblockingQueue_H
 
+#include <atomic>
 #include "AssertLib.h"
 
-//! Nonblocking queue for single producer and single consumer.
+//! Nonblocking queue for single producer and single consumer, possibly on different threads.
 template<typename T>
 class NonblockingQueue {
-    volatile unsigned myPush;    // Count of pushes.  May wrap.
-    volatile unsigned myPop;     // Count of pops.  May wrap.
+    std::atomic<unsigned> myPush;   //!< Number of pushes
+    std::atomic<unsigned> myPop;    //!< Number of pops
     T* myArray;
     T* myEnd;
-    T* myHead;
-    T* myTail;
+    T* myHead;                      //!< Private to popper
+    T* myTail;                      //!< Private to pusher
     int myCapacity;
 public:
-    NonblockingQueue( size_t maxSize ) {
-        myPush = myPop = 0;
+    NonblockingQueue( size_t maxSize ) : myPush(0), myPop(0) {
         myHead = myTail = myArray = new T[maxSize];
         myEnd = myArray+maxSize;
         myCapacity = maxSize;
@@ -28,7 +28,9 @@ public:
     //! Return pointer to fresh slot, or return NULL if queue is full.
     /** Caller must call finishPush after filling in slot. */
     T* startPush() {
-        int d = int(myPush-myPop);          // FIXME - read of myPop needs load-with-acquire semantics
+        int nPop = myPop.load(std::memory_order_acquire);
+        int nPush = myPush.load(std::memory_order_relaxed);   
+        int d = int(nPush-nPop);
         if( d<myCapacity )
             return myTail;
         else
@@ -36,7 +38,8 @@ public:
     }
     //! Push slot returned by previous call to startPush.
     void finishPush() {
-        ++myPush;                            // FIXME - write of myPush needs load-with-acquire semantics
+        auto tmp = myPush.load(std::memory_order_relaxed);     
+        myPush.store(tmp+1,std::memory_order_release);
         if( ++myTail==myEnd )
             myTail=myArray;
     }
@@ -45,7 +48,9 @@ public:
 
     //! Return pointer to slot at head of queue, or return NULL if queue is empty.
     T* startPop() {                   
-        int d = int(myPush-myPop);            // FIXME - read of myPush needs load-with-acquire semantics
+        int nPush = myPush.load(std::memory_order_acquire);   
+        int nPop = myPop.load(std::memory_order_relaxed);
+        int d = int(nPush-nPop);            
         Assert(d>=0);
         if( d ) 
             return myHead;
@@ -53,7 +58,8 @@ public:
             return 0;
     }
     void finishPop() {
-        ++myPop;                // FIXME - write of myPop deeds store-with-release semantics
+        auto tmp = myPop.load(std::memory_order_relaxed);     
+        myPop.store(tmp+1,std::memory_order_release);
         if( ++myHead==myEnd ) 
             myHead=myArray;
     }

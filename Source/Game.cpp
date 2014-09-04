@@ -12,19 +12,20 @@
 #include <fstream>
 #include "FileSuffix.h"
 #include "Midi.h"
-#include "MidiPlayer.h"
+#include "Orchestra.h"
 #include "Synthesizer.h"
 #include "ChannelToWaDialog.h"
 #include "WaPlot.h"
 #include "WaSet.h"
 #include "Widget.h"
+#include "SoundSetCollection.h"
 
 #define GAME_LOG 0
 #if GAME_LOG
 static std::ofstream GameLog("C:\\tmp\\gamelog.txt");
 #endif
 
-static Midi::Player TheMidiPlayer;
+static Midi::Orchestra TheOrchestra;
 static std::string TheMidiTuneFileName;  // If empty, then not yet set
 static Midi::Tune TheMidiTune;
 ChannelToWaDialog TheChannelToWaDialog;
@@ -37,7 +38,7 @@ void InitializeMidi( const char* filename ) {
 #endif
 
 static void MidiUpdate() {
-    TheMidiPlayer.update();
+    TheOrchestra.update();
 }
 
 static void CopyTuneToWaPlot(WaPlot& plot, const Midi::Tune& tune) {
@@ -57,7 +58,7 @@ static void CopyWaSetToWaPlot(WaPlot& plot, std::string name, const WaSet& w) {
 
 static void ReadMidiTune(const char* filename) {
     // Make sure player is stopped.
-    TheMidiPlayer.stop();
+    TheOrchestra.stop();
     if( TheMidiTune.readFromFile(filename) ) {
         TheMidiTuneFileName = filename;
         TheChannelToWaDialog.clear();
@@ -80,11 +81,11 @@ const char* GameTitle() {
 static std::string CurrentProjectFileName;
 
 //! Open a Wacoder project file (.wacoder extension).
-/** Format of the file is as follows.  Each line has the form [mwt] .*
+/** Format of the file is as follows.  Each line has the form [msc] .*
     The first character denotes the type of line.
     m: .* denotes a midi file.  This line must come first.
-    w: .* denotes a waSet file.
-    t: .* denotes a MIDI track name.  (Use canonical synthetic one if track has no name) */
+    s: .* denotes a SoundSet file (WaSet or Patch)
+    c: .* denotes a MIDI track name.  (Use canonical synthetic one if track has no name) */
 static void OpenWacoderProject(const std::string& filename) {
 #if GAME_LOG
     GameLog << "enter OpenWacoderProject(" << filename << ")\n" << std::flush;
@@ -109,8 +110,8 @@ static void OpenWacoderProject(const std::string& filename) {
                 case 'm':
                     ReadMidiTune(path);
                     break;
-                case 'w':
-                    TheWaSetCollection.addWaSet(TheChannelToWaDialog.addWaSet(path), path);
+                case 's':
+                    TheSoundSetCollection.addSoundSet(TheChannelToWaDialog.addWaSet(path), path);
                     break;
                 case 'c': {
                     unsigned channel = TheMidiTune.channels().findByName(path);
@@ -129,8 +130,9 @@ static void OpenWacoderProject(const std::string& filename) {
     GameLog << "closed file " << filename << "\n" << std::flush;
 #endif
     CurrentProjectFileName = filename;
-    TheWaSetCollection.forEach( [&]( const std::string& name, const WaSet& w ) {
-        CopyWaSetToWaPlot(TheWaPlot, name, w);
+    TheSoundSetCollection.forEach( [&]( const std::string& name, const Synthesizer::SoundSet& s ) {
+        if( const WaSet* w = dynamic_cast<const WaSet*>(&s) )
+            CopyWaSetToWaPlot(TheWaPlot, name, *w);
     });
 #if GAME_LOG
     GameLog << "leave OpenWacoderProject(" << filename << ")\n" << std::flush;
@@ -145,8 +147,8 @@ static void SaveWacoderProject(const std::string& filename) {
     Assert(!TheMidiTuneFileName.empty() );
     std::ofstream f(CurrentProjectFileName);
     f << "m " << TheMidiTuneFileName << std::endl;
-    TheChannelToWaDialog.forEach( [&f](bool isWaSet, const std::string& s ) {
-        f << (isWaSet ? "w " : "c ");
+    TheChannelToWaDialog.forEach( [&f](bool isSoundSet, const std::string& s ) {
+        f << (isSoundSet ? "s " : "c ");
         f << s << std::endl;
     });
     f.close();
@@ -186,9 +188,9 @@ bool GameInitialize() {
 
 static void PlayTune() {
     if( TheMidiTune.empty() ) return;
-    TheMidiPlayer.preparePlay(TheMidiTune);
-    TheChannelToWaDialog.setupMidiPlayer(TheMidiPlayer);
-	TheMidiPlayer.commencePlay();
+    TheOrchestra.preparePlay(TheMidiTune);
+    TheChannelToWaDialog.setupOrchestra(TheOrchestra);
+	TheOrchestra.commencePlay();
 }
 
 class PlayButton: public ToggleButton {
@@ -200,7 +202,7 @@ public:
         if( isOn() ) {
 			PlayTune();
         } else {
-            TheMidiPlayer.stop();
+            TheOrchestra.stop();
         }
     }
 } static ThePlayButton;
@@ -344,19 +346,25 @@ void GameDroppedFile(NimblePoint where, const char* filename) {
             if( suffix=="mid" ) {
                 // Read MIDI file
                 ReadMidiTune( filename );
-            } else if( suffix=="wav" ) {
-                // Read a WaSet
-                std::string name = TheChannelToWaDialog.addWaSet(filename);
-                const WaSet*w = TheWaSetCollection.addWaSet(name, filename);
-                CopyWaSetToWaPlot( TheWaPlot, name, *w );
             } else if( suffix=="wacoder" ) {
                 OpenWacoderProject(filename); 
+            } else if( suffix=="wav" || suffix=="pat" ) {
+                // Read a WaSet
+                std::string name = TheChannelToWaDialog.addWaSet(filename); // FIXME - rename to addSoundSet
+                const Synthesizer::SoundSet* s = TheSoundSetCollection.addSoundSet(name, filename);
+                if( const WaSet* w = dynamic_cast<const WaSet*>(s) )
+                    CopyWaSetToWaPlot( TheWaPlot, name, *w );
             }
         }
     }
 }
 
 void PlayWa( const std::string& waSetName, float freq, float duration ) {
-    const Wa* wa = TheWaSetCollection.find(waSetName)->lookup(freq, duration);
-    Play(Synthesizer::SimpleSource::allocate(wa->waveform));
+    if( const WaSet* w = dynamic_cast<const WaSet*>(TheSoundSetCollection.find(waSetName)) ) {
+        const Wa* wa = w->lookup(freq, duration);
+        Play(Synthesizer::SimpleSource::allocate(wa->waveform));
+    } else {
+        Assert(0);
+        // Must be a Patch.  Find note and play it.
+    }
 }

@@ -1,6 +1,7 @@
 #include "NonblockingQueue.h"
 #include "PoolAllocator.h"
 #include "Synthesizer.h"
+#include "Patch.h"
 #include <cstring>
 #include <cstdio>
 
@@ -11,15 +12,16 @@ namespace Synthesizer {
 //---------------------------------------------------------------
 class Player;
 
-enum PlayerMessageKind {
-    WMK_Start,
-    WMK_ChangeVolume,
-    WMK_ChangeEnvelope
+enum class PlayerMessageKind: char {
+    Start,
+    ChangeVolume,                   // Used by DynamicSource
+    ChangeEnvelope,                 // Used by AsrSource
+    Release                         // Used by PatchSource
 };
 
 class PlayerMessage {
 public:
-    char kind;                          // Really a PlayerMessageKind
+    PlayerMessageKind kind;             // Really a PlayerMessageKind
     Player* player;
     union {
         struct {                        // kind==WMK_ChangeEnvelope
@@ -140,7 +142,7 @@ void Play( Source* src, float volume, float x, float y ) {
 
     // Send message to interrupt handler.
     PlayerMessage* m = PlayerMessageQueue.startPush();
-    m->kind = WMK_Start;
+    m->kind = PlayerMessageKind::Start;
     m->player = p;
     PlayerMessageQueue.finishPush();
 }
@@ -153,7 +155,7 @@ void OutputInterruptHandler( Waveform::sampleType* left, Waveform::sampleType* r
         Player* p = m->player;
         Assert( (size_t(p)&3)==0 );
         Assert( p->source->player==p ); 
-        if( m->kind==WMK_Start ) {
+        if( m->kind==PlayerMessageKind::Start ) {
             // Starting a new player
             livePlayerSet.push(p);
         } else {
@@ -271,7 +273,7 @@ void DynamicSource::destroy() {
 }
 
 void DynamicSource::receive( const PlayerMessage& m ) {
-    Assert( m.kind==WMK_ChangeVolume );
+    Assert( m.kind==PlayerMessageKind::ChangeVolume );
     targetVolume = m.dynamic.newVolume;
     deadline = m.dynamic.deadline;
     Assert( !(release && m.dynamic.release) );
@@ -318,7 +320,7 @@ unsigned DynamicSource::update( float* acc, unsigned n ) {
 void DynamicSource::changeVolume( float newVolume, float deadline, bool releaseWhenDone ) {
     // Send message
     PlayerMessage* m = PlayerMessageQueue.startPush();
-    m->kind = WMK_ChangeVolume;
+    m->kind = PlayerMessageKind::ChangeVolume;
     m->player = player;
     m->dynamic.newVolume = newVolume;
     m->dynamic.deadline = unsigned(SampleRate*deadline);
@@ -359,7 +361,7 @@ void AsrSource::destroy() {
 }
 
 void AsrSource::receive( const PlayerMessage& m ) {
-    Assert( m.kind==WMK_ChangeEnvelope );
+    Assert( m.kind==PlayerMessageKind::ChangeEnvelope );
     if( envDelta==0 ) {
         envDelta = m.midi.envDelta;
         envelope = m.midi.envelope;
@@ -420,7 +422,7 @@ unsigned AsrSource::update( float* acc, unsigned n ) {
 void AsrSource::changeEnvelope(Envelope& e, float speed) {
     // Send message
     PlayerMessage* m = PlayerMessageQueue.startPush();
-    m->kind = WMK_ChangeEnvelope;
+    m->kind = PlayerMessageKind::ChangeEnvelope;
     m->player = player;
     m->midi.envelope = &e;
     m->midi.envDelta = Envelope::timeType(speed*Envelope::unitTime);
@@ -429,141 +431,74 @@ void AsrSource::changeEnvelope(Envelope& e, float speed) {
 }
 
 //-----------------------------------------------------------
-// Waveform
+// PatchSource
 //-----------------------------------------------------------
+static PoolAllocator<PatchSource> PatchSourceAllocator(64,false);
 
-typedef short int16_t;
-typedef unsigned short uint16_t;
-typedef unsigned uint32_t;
-typedef int int32_t;
-
-struct WavHeader {
-    // Each declaration is 4 bytes
-    char chunkId[4];
-    uint32_t chunkSize;
-    char format[4];
-    char subchunk1Id[4];
-    uint32_t subchunk1Size;
-    uint16_t audioFormat, numChannels;
-    uint32_t sampleRate;
-    uint32_t byteRate;
-    uint16_t blockAlign, bitsPerSample;
-    void check();
-};
-
-void WavHeader::check() {
-    Assert( memcmp(chunkId,"RIFF",4)==0 );
-    Assert( memcmp(format,"WAVE",4)==0 );
-    Assert( memcmp(subchunk1Id,"fmt ",4)==0 );
-    Assert( subchunk1Size==16 );
-    Assert( audioFormat==1 );  // PCM/uncompressed
-    Assert( sampleRate==44100 );
-    Assert( bitsPerSample==16 );
+PatchSource* PatchSource::allocate( const PatchSample& ps, float relativeFrequency, float volume ) {
+    Assert( 0.25f <= relativeFrequency && relativeFrequency <= 4.0f ); // Sanity check
+    PatchSource* s = PatchSourceAllocator.allocate();
+    if( s ) {
+        new(s) PatchSource;
+        s->waveform = &ps;
+        s->waveIndex = 0;
+        s->waveDelta = unsigned( ps.sampleRate()/Synthesizer::SampleRate*Waveform::unitTime*relativeFrequency + 0.5f);
+        s->volume = volume;
+        Assert( s->waveDelta<=Waveform::unitTime*256 ); // Sanity check
+        Assert( s->waveDelta>=Waveform::unitTime/256 ); // Sanity check
+        s->tableEnd = ps.size() << PatchSample::timeShift;
+        if( ps.isLooping() ) {
+            s->loopEnd = ps.loopEnd();
+            Assert( ps.loopEnd()>ps.loopStart() );
+            s->loopDelta = ps.loopEnd() - ps.loopStart();
+        } else {
+            s->loopEnd = s->tableEnd;
+            s->loopDelta = 0;
+        }
+        Assert(s->loopEnd>>ps.timeShift <= ps.size());
+        Assert(s->loopDelta<=s->loopEnd);
+    } 
+    return s;
 }
 
-struct WavData {
-    char subchunk2Id[4];
-    uint32_t subchunk2Size;
-    void check();
-};
-
-void WavData::check() {
-    Assert( memcmp(subchunk2Id,"data",4)==0 );
-    Assert( subchunk2Size%2==0 );
+void PatchSource::destroy() {
+    PatchSourceAllocator.destroy(this);
 }
 
-class Waveform::inputType {
-    FILE* myFile;
-    const char* myData;
-    const char* myEnd;
-public:
-    inputType( const char* data, size_t n ) : myFile(NULL), myData(data), myEnd(data+n) {}
-    inputType( FILE* f ) : myFile(f), myData(NULL), myEnd(NULL) {}
-    void read( void* dst, size_t n );
-};
+void PatchSource::release() {
+    Assert( (size_t(player)&3)==0 );
+    PlayerMessage* m = PlayerMessageQueue.startPush();
+    m->kind = PlayerMessageKind::Release;
+    m->player = player;
+    PlayerMessageQueue.finishPush();
+}
 
-void Waveform::inputType::read( void* dst, size_t n ) {
-    if( myData ) {
-        Assert( n <= size_t(myEnd-myData) );
-        memcpy( dst, myData, n );
-        myData += n;
-    } else {
-        size_t m = fread(dst,n,1,myFile);
-        Assert(m==1);
+void PatchSource::receive( const PlayerMessage& m ) {
+    Assert( m.kind==PlayerMessageKind::Release );
+    loopEnd = tableEnd;   
+}
+
+unsigned PatchSource::update( float* acc, unsigned n ) {
+    const Waveform::sampleType* w = waveform->begin();
+    Waveform::timeType di = waveDelta;
+    Waveform::timeType i = waveIndex;
+    float volume = this->volume;
+    unsigned k=0;
+    while(k<n) {
+        if(i>=loopEnd) 
+            if( i<tableEnd ) 
+                // Wrap
+                i -= loopDelta;
+            else 
+                // End of waveform
+                break;
+        // Create wave sample by interpolating waveTable  
+        acc[k++] = waveform->interpolate(w, i)*volume;
+        // Update waveIndex and wrap around if necessary. 
+        i += di;
     }
-}
-
-void Waveform::readFromMemory( const char* data, size_t n ) {
-    inputType in(data,n);
-    readFromInput(in);
-}
-
-void Waveform::readFromFile( const char* filename ) {
-    FILE* f = fopen(filename,"rb");
-    Assert(f);						// FIXME - recover from missing file
-    inputType in(f);
-    readFromInput(in); 
-    fclose(f);
-}
-
-void Waveform::readFromInput( inputType& f ) {
-    WavHeader w;
-    Assert( sizeof(w)==36 );
-    f.read(&w,36);
-    w.check();
-    // FIXME - skip subchunk1Size-16 bytes
-#if 0
-    Assert( w.extraParamSize==0 );
-#endif
-    WavData d;
-    f.read(&d,8);
-    d.check();
-    size_t n = d.subchunk2Size/2;
-    SimpleArray<int16_t> tmp;
-    tmp.resize(n);
-    f.read(tmp.begin(),sizeof(int16_t)*n);
-    resize(n);
-    for( size_t i=0; i<n; ++i ) {
-        (*this)[i] = tmp[i]*(1.f/(1<<15));
-    }
-    complete(false);
-}
-
-void Waveform::writeToFile( const char* filename ) {
-    size_t n = size();
-    FILE* f = fopen(filename,"wb");
-    Assert(f);
-    WavHeader w;
-    std::memset(&w,0,sizeof(w));
-    memcpy( w.chunkId, "RIFF", 4 );
-    w.chunkSize = 36 + 8 + 2*n - 8;
-    memcpy( w.format, "WAVE", 4 );
-    memcpy( w.subchunk1Id, "fmt ", 4 );
-    w.subchunk1Size = 16;
-    w.audioFormat = 1;  // PCM
-    w.numChannels = 1;  // Mono
-    w.sampleRate = 44100;
-    w.bitsPerSample = 16;
-    w.byteRate = w.sampleRate * w.numChannels * w.bitsPerSample / 8;
-    w.blockAlign = w.numChannels * w.bitsPerSample / 8;
-    fwrite(&w,36,1,f);
-
-    WavData d;
-    memcpy( d.subchunk2Id, "data", 4 );
-    d.subchunk2Size = 2*n;
-    fwrite(&d,8,1,f);
-
-    SimpleArray<int16_t> tmp;
-    tmp.resize(n);
-    for( size_t i=0; i<n; ++i ) {
-        const int scale = (1<<15)-1;
-        float a = (*this)[i]*scale+(scale+0.5f); 
-        if( a<0 ) a = 0;
-        if( a>2*scale ) a=2*scale;
-        tmp[i] = int(a) - scale;
-    }
-    fwrite(tmp.begin(),2,n,f);
-    fclose(f);
+    waveIndex = i;
+    return k;
 }
 
 void Initialize() {

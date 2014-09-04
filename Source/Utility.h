@@ -101,9 +101,9 @@ public:
     NoCopy() {}
 };
 
-//! No-frills array class
+//! No-frills array class.  
 /** Extra is number of additional elements to add beyond reported size.
-    E.g., AdditiveSynthesizer uses Extra=1 to simplify logic. */
+    E.g., Waveform uses Extra=1 to simplify logic. */
 template<typename T, size_t Extra=0>
 class SimpleArray {
     T* myStart;

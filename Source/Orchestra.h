@@ -17,13 +17,14 @@ limitations under the License.
 Playing MIDI files through a Synthesizer
 *******************************************************************************/
 
-#ifndef MidiPlayer_H
-#define MidiPlayer_H
+#ifndef Orchestra_H
+#define Orchestra_H
 
 #include "Midi.h"
 
 namespace Midi {
 
+//! An object capable of translating MIDI events to issuance of Source objects.
 class Instrument {
 public:
     virtual void noteOn( const Event& on, const Event& off ) = 0;
@@ -32,8 +33,8 @@ public:
     virtual ~Instrument() {}
 };
 
-//! Instance plays a tune.
-class Player {
+//! Object that holds mapping of Midi channels to Instrument, and can use them to play a Tune.
+class Orchestra {
     typedef std::vector<Instrument*> ensembleType;
     ensembleType myEnsemble;
     /** Units = seconds */
@@ -43,14 +44,14 @@ class Player {
     EventSeq::iterator myEndPtr;
     std::vector<uint16_t>::const_iterator myDurationPtr;
     const Midi::Tune* myTune;
-    Player( const Player& ) = delete;
-    void operator=( const Player& ) = delete;
+    Orchestra( const Orchestra& ) = delete;
+    void operator=( const Orchestra& ) = delete;
     void clear();
     void computeDuration(const Tune& tune);
 public:
     //! Construct player with no tune to play.
-    Player() {}
-    ~Player();
+    Orchestra() {}
+    ~Orchestra();
     //! Prepare to play tune
     void preparePlay(const Tune& tune);
     //! Tune passed to preparePlay.  Valid until commencePlay is called.
@@ -71,4 +72,19 @@ public:
 
 } // namespace Midi
 
-#endif /* MidiPlayer_H */
+// The namespace for SoundSet could be Midi too, since it connects Midi stuff to Synthesizer stuff.
+namespace Synthesizer {
+
+//! A set of sounds and factory for producing instruments to play them.
+class SoundSet {
+public:
+    virtual Midi::Instrument* makeInstrument() const = 0;
+
+protected:
+    SoundSet() {}
+    ~SoundSet() {}
+};
+
+} // Synthesizer
+
+#endif /*Orchestra_H */

@@ -3,7 +3,7 @@
 
 #include "Waveform.h"
 #include "Utility.h"
-#include "MidiPlayer.h"
+#include "Orchestra.h"
 #include <string>
 
 class Patch;
@@ -36,37 +36,37 @@ public:
     float pitch() const {return myRootFreq;}
 };
 
-class Patch {
+class Patch: public Synthesizer::SoundSet {
     SimpleArray<PatchSample> mySamples;
-    std::string myReadStatus;
     std::string myInstrumentName;
     class parser;
+    void readFromFile( const std::string& filename );
 public:
+    Patch( const std::string& filename );
     const PatchSample* begin() const {return mySamples.begin();}
     const PatchSample* end() const {return mySamples.end();} 
     size_t size() const {return mySamples.size();}
     bool empty() const {return size()==0;}
-    const PatchSample& operator[]( size_t k ) {return mySamples[k];}
-    bool readFromFile( const std::string& filename );
-    const std::string& readStatus() const {return myReadStatus;}
+    const PatchSample& operator[]( size_t k ) const {return mySamples[k];}
     const PatchSample& find( float freq ) const;
+    /*override*/ Midi::Instrument* makeInstrument() const;
 };
 
 namespace Synthesizer {
     class PatchSource;
-}
+};
 
-class PatchInstrument: public Midi::Instrument {
-    Synthesizer::PatchSource* keyArray[128];
-    const Patch& myPatch;
+class PatchInstrumentBase: public Midi::Instrument {
+protected:
     typedef Midi::Event Event;
-    /*override*/ void noteOn( const Event& on, const Event& off );
+    PatchInstrumentBase();
+    ~PatchInstrumentBase();
+    void playSource( const PatchSample& ps, int note, float relFreq, float volume );
+private:
+    Synthesizer::PatchSource* keyArray[128]; 
     /*override*/ void noteOff( const Event& off);
     /*override*/ void stop();
     void release( int note );
-public:
-    PatchInstrument( const Patch& patch );
-    ~PatchInstrument();
 };
 
 #endif /* Patch_H */

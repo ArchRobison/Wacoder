@@ -51,7 +51,7 @@ private:
     union {
         struct {
             union {
-                noteType myNote;
+                noteType myNote;                // Always the same for drum
                 uint8_t myControllerNumber;
             };
             union {

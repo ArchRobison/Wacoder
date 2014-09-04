@@ -1,8 +1,67 @@
 #include "Patch.h"
 #include "AssertLib.h"
 #include "Synthesizer.h"
+#include "ReadError.h"
 #include <cstdio>
 #include <cstdint>
+
+PatchInstrumentBase::PatchInstrumentBase() {
+    for( int note=0; note<128; ++note )
+        keyArray[note] = nullptr;
+}
+
+void PatchInstrumentBase::playSource( const PatchSample& ps, int note, float relFreq, float volume ) {
+    Assert(!keyArray[note]);
+    if( Synthesizer::PatchSource* k = Synthesizer::PatchSource::allocate(ps, relFreq, volume) ) {
+        Play(k);
+        if(ps.isLooping()) {
+            // Source must be explicitly released
+            keyArray[note] = k;
+        } else {
+            // Source must *not be explicitly released, since it may be destroyed before the release.
+        }
+    }
+}
+
+void PatchInstrumentBase::noteOff( const Event& off ) {
+    release(off.note());
+}
+
+void PatchInstrumentBase::release( int note ) {
+    if( auto*& k = keyArray[note] ) {
+        k->release();
+        k = nullptr;
+    }
+}
+
+void PatchInstrumentBase::stop() {
+    for( int note=0; note<128; ++note )
+        release(note);
+}
+
+PatchInstrumentBase::~PatchInstrumentBase() {
+    stop();
+}
+
+class PatchInstrument: public PatchInstrumentBase {
+    const Patch& myPatch;
+    /*override*/ void noteOn( const Event& on, const Event& off );
+public:
+    PatchInstrument( const Patch& patch );
+};
+
+PatchInstrument::PatchInstrument(const Patch& patch) : myPatch(patch) {
+    Assert(!patch.empty());
+}
+
+void PatchInstrument::noteOn( const Event& on, const Event& off ) {
+    if( myPatch.empty() ) 
+        return;
+    int note = on.note();   // Used signed type, so that "note-69" can go negative
+    float freq = 440*std::pow(1.059463094f, note-69);
+    const PatchSample& ps = myPatch.find(freq);
+    playSource(ps,note,freq/ps.pitch(),on.velocity()*(1.0f/127));
+}
 
 class Patch::parser {
     Patch& patch;
@@ -25,7 +84,6 @@ class Patch::parser {
         return first[0] | first[1]<<8;
     }
 public:
-    class badFile {};
     parser( Patch& patch_ ) : patch(patch_) {}
     void parseFile( const uint8_t* first, const uint8_t* last );
 };
@@ -83,11 +141,11 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
 }
 
 void Patch::parser::throwError(const char* format, unsigned value) {
+    patch.mySamples.clear();
     char buf[128];
     Assert(std::strlen(format) + 8 <= sizeof(buf));
     sprintf(buf, format, value);
-    patch.myReadStatus = buf;
-    throw badFile();
+    throw ReadError(buf); 
 }
 
 void Patch::parser::parseFile( const uint8_t* first, const uint8_t* last ) {
@@ -111,34 +169,29 @@ void Patch::parser::parseFile( const uint8_t* first, const uint8_t* last ) {
         first = parseSample(patch.mySamples[i],first,last);
 }
 
-bool Patch::readFromFile( const std::string& filename ) {
+void Patch::readFromFile( const std::string& filename ) {
     mySamples.clear();
-    myReadStatus = "";
     FILE* f = std::fopen(filename.c_str(),"rb");
-    if(!f) {
-        myReadStatus = "cannot open file " + filename + ": " + std::strerror(errno);
-        return false;
-    }
+    if(!f) 
+        throw ReadError("cannot open file " + filename + ": " + std::strerror(errno));
+
     std::fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     std::fseek(f, 0, SEEK_SET);
-    uint8_t* buf = new uint8_t[fsize];
-    long s = fread(buf, 1, fsize, f);
+    SimpleArray<uint8_t> buf(fsize); 
+    long s = fread(buf.begin(), 1, fsize, f);
     fclose(f);
     Assert(s==fsize);
     if(s>=0) {
         parser p(*this);
-        try {
-            p.parseFile(buf, buf+s);
-        } catch( parser::badFile ) {
-            Assert(!myReadStatus.empty());
-            mySamples.clear();
-        }
+        p.parseFile(buf.begin(), buf.end());
     } else {
-        myReadStatus = "empty file";
+        throw ReadError("file " + filename + "is empty");
     }
-    delete[] buf;
-    return myReadStatus.empty();
+}
+
+Patch::Patch( const std::string& filename ) {
+    readFromFile(filename);
 }
 
 const PatchSample& Patch::find( float freq ) const {
@@ -152,39 +205,6 @@ const PatchSample& Patch::find( float freq ) const {
     return *result;      
 }
 
-PatchInstrument::PatchInstrument(const Patch& patch) : myPatch(patch) {
-    Assert(!patch.empty());
-    for( int note=0; note<128; ++note )
-        keyArray[note] = nullptr;
-}
-
-void PatchInstrument::noteOn( const Event& on, const Event& off ) {
-    if( myPatch.empty() ) 
-        return;
-    int note = on.note();   // Used signed type, so that "note-69" can go negative
-    float freq = 440*std::pow(1.059463094f, note-69);
-    const PatchSample& ps = myPatch.find(freq);
-    Assert(!keyArray[note]);
-    keyArray[note] = Synthesizer::PatchSource::allocate(ps,freq/ps.pitch());
-    Play(keyArray[note]);
-}
-
-void PatchInstrument::noteOff( const Event& off ) {
-    release(off.note());
-}
-
-void PatchInstrument::release( int note ) {
-    if( auto*& k = keyArray[note] ) {
-        k->release();
-        k = nullptr;
-    }
-}
-
-void PatchInstrument::stop() {
-    for( int note=0; note<128; ++note )
-        release(note);
-}
-
-PatchInstrument::~PatchInstrument() {
-    stop();
-}
+Midi::Instrument* Patch::makeInstrument() const {
+    return new PatchInstrument(*this);
+};

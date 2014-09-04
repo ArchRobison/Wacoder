@@ -2,59 +2,12 @@
 #define Synthesizer_H
 
 #include "Utility.h"
+#include "Waveform.h"
 #include <new>
 
+class PatchSample;
+
 namespace Synthesizer {
-
-static const size_t SampleRate = 44100;
-
-template<typename T, int Shift> 
-class SampledSignalBase: public SimpleArray<T,1> {
-public:
-    typedef T sampleType;
-    typedef unsigned timeType;	                            // Unsigned type       
-    static const int timeShift = Shift;
-    static const unsigned unitTime = (1<<timeShift);
-    timeType limit() const {return size()<<timeShift;}
-    float interpolate( const T* w, timeType t ) const {
-        size_t i = t>>timeShift;
-        Assert( w+i<end() );
-        sampleType s0 = w[i];
-        sampleType s1 = w[i+1];
-        float f = (t & unitTime-1)*(1.0f/unitTime);
-        return s0+(s1-s0)*f;
-    }
-};
-
-class Waveform: public SampledSignalBase<float,16> {
-public:
-    Waveform() : myIsCyclic(2) {}
-    Waveform( size_t n ) : myIsCyclic(2) {resize(n);}
-
-    ~Waveform() {}
-    bool isCyclic() const {
-        Assert(isCompleted());
-        return myIsCyclic!=0;
-    }
-    void complete( bool cyclic=true ) {
-        myIsCyclic = cyclic;
-        *end() = cyclic ? *begin() : 0;
-    }
-    bool isCompleted() const {return myIsCyclic<2;}
-    //! Read from a ".wav" file
-    void readFromFile( const char* filename );
-    //! Write to a ".wav" file
-    void writeToFile( const char* filename );
-    //! Read from a ".wav" file in memory
-    void readFromMemory( const char* data, size_t size );
-private:
-    class inputType;
-    void readFromInput( inputType& f );
-    /** 0-> non-cyclic waveform (conceptually tailed by zeros).
-        1-> cyclic waveform 
-        2-> method complete has not been called yet */
-    char myIsCyclic;
-};
 
 class Envelope: public SampledSignalBase<float,20> {
 public:
@@ -90,6 +43,7 @@ protected:
     //! Set acc[0:n] to next n samples (or fewer if src has reached its end).  Returns nmber of samples created
     virtual size_t update( float* acc, unsigned n ) = 0;
     virtual void destroy() = 0;
+    //! Asynchronously called when a message is received by the interrupt handler.
     virtual void receive( const PlayerMessage& m ) = 0;
 public:
 };
@@ -129,7 +83,8 @@ public:
 };
 
 //! Source whose envelope can be set on the fly. 
-/** Useful for Attack-sustain-release synthesis */
+/** Useful for Attack-sustain-release synthesis.  
+    Will eventually be superceded by PatchSource. */
 class AsrSource: public Source {
     const Waveform* waveform;
     Waveform::timeType waveIndex;
@@ -145,6 +100,24 @@ class AsrSource: public Source {
 public:
     static AsrSource* allocate( const Waveform& w, float freq, const Envelope& attack, float speed=1.0f );
     void changeEnvelope(Envelope& e, float speed=1.0f );
+};
+
+//! Source based on a Patch object.
+class PatchSource: public Source {
+    const Waveform* waveform;
+    float volume;
+    Waveform::timeType waveDelta;
+    Waveform::timeType waveIndex;
+    Waveform::timeType loopEnd;
+    Waveform::timeType tableEnd;
+    // loop start minus the loop end, i.e. the amount to jump back after crossing the loopEnd.
+    Waveform::timeType loopDelta;
+    /*override*/ unsigned update( float* acc, unsigned n );
+    /*override*/ void destroy();
+    /*override*/ void receive( const PlayerMessage& m );
+public:
+    static PatchSource* allocate( const PatchSample& patch, float relativeFrequency, float volume );
+    void release();
 };
 
 //! Intialize synthesizer global structures.

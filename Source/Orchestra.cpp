@@ -1,7 +1,8 @@
-#include "MidiPlayer.h"
+#include "Orchestra.h"
 #include "AssertLib.h"
 #include "Synthesizer.h"
 #include "Host.h"
+#include "Patch.h"
 
 //-----------------------------------------------------------------
 // MidiInstrument subclasses
@@ -138,17 +139,17 @@ void AdditiveInstrument::stop() {
 
 namespace Midi {
 
-void Player::clear() {
+void Orchestra::clear() {
     for(size_t i=myEnsemble.size(); i-->0;)
         delete myEnsemble[i];
     myEnsemble.clear();
 }
 
-Player::~Player() {
+Orchestra::~Orchestra() {
     clear();
 }
 
-void Player::preparePlay( const Tune& tune ) {
+void Orchestra::preparePlay( const Tune& tune ) {
     clear();
     myTune = &tune;
     myZeroTime = 0;
@@ -159,7 +160,7 @@ void Player::preparePlay( const Tune& tune ) {
     myEnsemble.resize(tune.channels().size(),nullptr);
 }
 
-void Player::commencePlay() {
+void Orchestra::commencePlay() {
     // Add default instruments
     for(Instrument*& i: myEnsemble)
         if(!i)
@@ -169,7 +170,7 @@ void Player::commencePlay() {
     myTune = nullptr;
 }
 
-void Player::stop() {
+void Orchestra::stop() {
     if( myZeroTime ) {
         for(Instrument* i: myEnsemble)
             i->stop();
@@ -179,7 +180,7 @@ void Player::stop() {
 
 /** Since this routine is tightly tied to method update, please keep it lexical close
     to that method, so that the correspondence can be checked. */
-void Player::computeDuration( const Tune& tune ) {
+void Orchestra::computeDuration( const Tune& tune ) {
     myDuration.clear();
     NoteTracker<std::pair<const Event*, size_t>> noteStart(tune);
     for( const Event& e: tune.events() )
@@ -223,7 +224,7 @@ void Player::computeDuration( const Tune& tune ) {
 #endif
 }
 
-void Player::update() {
+void Orchestra::update() {
     if(!myZeroTime)
         // Nothing to play
         return;

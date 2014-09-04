@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 #include "Midi.h"
-#include "MidiPlayer.h"
+#include "Orchestra.h"
 
 class WaSet;
 
@@ -74,7 +74,7 @@ public:
             f(cow.isWaSet, cow.name);
     }
 
-	void setupMidiPlayer( Midi::Player& player );
+	void setupOrchestra( Midi::Orchestra& orchestra );
 };
 
 #endif /* ChannelToWaDialog_H */

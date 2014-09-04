@@ -159,7 +159,7 @@ float FrequencyOfWa( const float* a, int n ) {
     return freq;
 }
 
-WaSet::WaSet( const std::string& wavFilename ) : myFileName(wavFilename) {
+WaSet::WaSet( const std::string& wavFilename ) {
     Waveform w;
     w.readFromFile( wavFilename.c_str() );
     WaBounds waBounds;
@@ -209,24 +209,14 @@ const Wa* WaSet::lookup( float freq, float duration ) const {
     return &myArray[bestI];
 }
 
-#if HAVE_WriteWaPlot
-void WaSet::writeWaPlot( const char* filename ) const {
-    FILE* f = fopen(filename,"w");
-    for( int i=0; i<int(myArray.size()); ++i )
-        fprintf(f,"%d %g %g\n", i, myArray[i].duration*myArray[i].freq, myArray[i].freq );
-    fclose(f);
-}
-#endif
-
-WaSet* WaSetCollection::addWaSet(const std::string& name, const std::string& path) {
-    auto i = myMap.insert(std::make_pair(name, (WaSet*)nullptr)).first;
-    if(!i->second) {
-        i->second = new WaSet(path);
-    }
-    return i->second;
-}
-
-WaSetCollection TheWaSetCollection;
+class WaInstrument: public Midi::Instrument {
+    /*override*/ void noteOn(const Midi::Event& on, const  Midi::Event& off);
+    /*override*/ void noteOff(const  Midi::Event& off);
+    /*override*/ void stop();
+    const WaSet& myWaSet;
+public:
+    WaInstrument(const WaSet& w) : myWaSet(w) {}
+};
 
 void WaInstrument::noteOn(const Midi::Event& on, const  Midi::Event& off) {
     Assert(on.note()==off.note());
@@ -246,6 +236,19 @@ void WaInstrument::noteOff(const  Midi::Event& off) {
 void WaInstrument::stop() {
     // No action required.
 }
+
+Midi::Instrument* WaSet::makeInstrument() const {
+    return new WaInstrument(*this);
+}
+
+#if HAVE_WriteWaPlot
+void WaSet::writeWaPlot( const char* filename ) const {
+    FILE* f = fopen(filename,"w");
+    for( int i=0; i<int(myArray.size()); ++i )
+        fprintf(f,"%d %g %g\n", i, myArray[i].duration*myArray[i].freq, myArray[i].freq );
+    fclose(f);
+}
+#endif
 
 #if HAVE_WriteWaPlot
 void WriteWaPlot( const char* filename, const MidiTrack& track, double ticksPerSec ) {

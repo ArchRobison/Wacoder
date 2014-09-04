@@ -1,6 +1,6 @@
 #include "ChannelToWaDialog.h"
 #include "Midi.h"
-#include "WaSet.h"
+#include "SoundSetCollection.h"
 #include <fstream>
 
 int ChannelToWaDialog::hilightedTrack( Hue h ) const {
@@ -64,16 +64,16 @@ void ChannelToWaDialog::addChannel( const std::string& name, Midi::Event::channe
     myItems.push_back(item);
 }
 
-void ChannelToWaDialog::setupMidiPlayer(Midi::Player& player) {
+void ChannelToWaDialog::setupOrchestra(Midi::Orchestra& player) {
     const Midi::Tune& tune = player.tune();
-    WaSet* w = nullptr;
+    Synthesizer::SoundSet* s = nullptr;
     for( const channelOrWaSet& i : myItems )
         if( i.isWaSet ) {
             // WaSet to use for subsquent channels, until another WaSet is seen.
-            w = TheWaSetCollection.find(i.name);
+            s = TheSoundSetCollection.find(i.name);
         } else {
-            if( w ) {
-                player.setInstrument(i.channel, new WaInstrument(*w));
+            if( s ) {
+                player.setInstrument(i.channel, s->makeInstrument());
             } else {
                 // No Waset specified
             }
