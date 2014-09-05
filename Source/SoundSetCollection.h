@@ -2,6 +2,7 @@
 #define SoundSetCollection_H
 
 #include "Orchestra.h"
+#include "Drum.h"
 #include <map>
 
 class SoundSetCollection {
@@ -15,7 +16,7 @@ public:
         auto i = myMap.find(name);
         return i!=myMap.end() ? i->second : nullptr;
     }
-    // Apply f(name,w) for each WasSet in the collection.
+    // Apply f(name,w) for each SoundSet in the collection.
     template<typename F>
     void forEach( const F& f ) {
         for( const auto& item: myMap )

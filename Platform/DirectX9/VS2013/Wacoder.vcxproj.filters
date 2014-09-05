@@ -84,7 +84,10 @@
     <ClCompile Include="..\..\..\Source\ReadError.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\Source\DrumSet.cpp">
+    <ClCompile Include="..\..\..\Source\ToneSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Source\Drum.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -181,7 +184,10 @@
     <ClInclude Include="..\..\..\Source\ReadError.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\Source\DrumSet.h">
+    <ClInclude Include="..\..\..\Source\ToneSet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Source\Drum.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

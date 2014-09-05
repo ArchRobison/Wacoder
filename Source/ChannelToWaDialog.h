@@ -12,23 +12,23 @@ class WaSet;
 
 class ChannelToWaDialog: public PermutationDialog {
     //! Index of a channel or a reference to a WaSet.
-    struct channelOrWaSet {
-        //! True if WaSet, false otherwise.
-        bool isWaSet;
+    struct channelOrSoundSet {
+        //! True if a SoundSet, false if a channel.
+        bool isSoundSet;
         //! If a channel, the index of the channel within the tune.  
         Midi::Event::channelType channel;
 		//! Name that appears in dialog - either name of channel or name of WaCoder
         std::string name;
-        channelOrWaSet( bool isWaSet_, const std::string& name_ ) : isWaSet(isWaSet_), name(name_) {}
+        channelOrSoundSet( bool isWaSet_, const std::string& name_ ) : isSoundSet(isWaSet_), name(name_) {}
     };
-    typedef std::vector<channelOrWaSet> itemVectorType;
+    typedef std::vector<channelOrSoundSet> itemVectorType;
     itemVectorType myItems;
     /*override*/size_t size() const {return myItems.size();}
     const char* name( size_t i ) const {
         return myItems[i].name.c_str();
     }
     int indent( size_t i ) const {
-        return myItems[i].isWaSet ? 0 : 1;
+        return myItems[i].isSoundSet ? 0 : 1;
     }
     /*override*/void doMove( size_t from, size_t to ) {
         Assert( from<myItems.size() );
@@ -70,8 +70,8 @@ public:
     /** The bool is true for a WaSet and false for a channel. */
     template<typename F>
     void forEach( F f ) const {
-        for(const channelOrWaSet& cow: myItems)
-            f(cow.isWaSet, cow.name);
+        for(const auto& item: myItems)
+            f(item.isSoundSet, item.name);
     }
 
 	void setupOrchestra( Midi::Orchestra& orchestra );

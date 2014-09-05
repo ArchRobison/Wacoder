@@ -137,6 +137,14 @@ void AdditiveInstrument::stop() {
     }
 }
 
+class NullInstrument : public Midi::Instrument {
+    /*override*/ void noteOn(const Midi::Event& on, const Midi::Event& off) {}
+    /*override*/ void noteOff(const Midi::Event& off) {}
+    /*override*/ void stop() {}
+public:
+    NullInstrument() {}
+};
+
 namespace Midi {
 
 void Orchestra::clear() {
@@ -162,9 +170,14 @@ void Orchestra::preparePlay( const Tune& tune ) {
 
 void Orchestra::commencePlay() {
     // Add default instruments
-    for(Instrument*& i: myEnsemble)
+    for( unsigned k=0; k<myEnsemble.size(); ++k ) {
+        Instrument*& i = myEnsemble[k];
         if(!i)
-            i = new AdditiveInstrument();
+            if(myTune->channels()[k].isDrum() )
+                i = new NullInstrument();       // FIXME
+            else
+                i = new AdditiveInstrument();
+    }
     // Get absolute time
     myZeroTime = HostClockTime();
     myTune = nullptr;

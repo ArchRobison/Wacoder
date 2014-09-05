@@ -36,7 +36,7 @@ public:
     float pitch() const {return myRootFreq;}
 };
 
-class Patch: public Synthesizer::SoundSet {
+class Patch {
     SimpleArray<PatchSample> mySamples;
     std::string myInstrumentName;
     class parser;
@@ -56,11 +56,12 @@ namespace Synthesizer {
     class PatchSource;
 };
 
-class PatchInstrumentBase: public Midi::Instrument {
+//! Base class for ToneInstrument and DrumInstrument
+class PatchInstrument: public Midi::Instrument {   
 protected:
     typedef Midi::Event Event;
-    PatchInstrumentBase();
-    ~PatchInstrumentBase();
+    PatchInstrument();
+    ~PatchInstrument();
     void playSource( const PatchSample& ps, int note, float relFreq, float volume );
 private:
     Synthesizer::PatchSource* keyArray[128]; 

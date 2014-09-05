@@ -68,7 +68,7 @@ namespace Midi {
 
 //! Reference: http://www.midi.org/techspecs/gm1sound.php
 /** Table here is zero-based (documentation is mysteriously one-based) */
-static const char* ProgramNameTable[] ={
+static const char* Bank0NameTable[] ={
     "Acoustic Grand Piano", // [0]
     "Bright Acoustic Piano",
     "Electric Grand Piano",
@@ -196,17 +196,72 @@ static const char* ProgramNameTable[] ={
     "Telephone Ring",
     "Helicopter",
     "Applause",
-    "Gunshot" // [127]
+    "Gunshot"       // [127]
+};
+
+static const char* PercussionNameTable[] = {
+    "Acoustic Bass Drum", // [0] corresponds to instrument 35
+    "Bass Drum 1",
+    "Side Stick",
+    "Acoustic Snare",
+    "Hand Clap",
+    "Electric Snare",
+    "Low Floor Tom",
+    "Closed Hi Hat",
+    "High Floor Tom",
+    "Pedal Hi-Hat",
+    "Low Tom",
+    "Open Hi-Hat",
+    "Low-Mid Tom",
+    "Hi-Mid Tom",
+    "Crash Cymbal 1",
+    "High Tom",
+    "Ride Cymbal 1",
+    "Chinese Cymbal",
+    "Ride Bell",
+    "Tambourine",
+    "Splash Cymbal",
+    "Cowbell",
+    "Crash Cymbal 2",
+    "Vibrasla",
+    "Ride Cymbal 2",
+    "Hi Bongo",
+    "Low Bongo",
+    "Mute Hi Conga",
+    "Open Hi Conga",
+    "Low Conga",
+    "High Timbale",
+    "Low Timbale",
+    "High Agogo",
+    "Low Agogo",
+    "Cabasa",
+    "Maracas",
+    "Short Whistle",
+    "Long Whistle",
+    "Short Guiro",
+    "Long Guiro",
+    "Claves",
+    "Hi Wood Block",
+    "Low Wood Block",
+    "Mute Cuica",
+    "Open Cuica",
+    "Mute Triangle",
+    "Open Triangle"             // Corresponds to instrument 81
 };
 
 //! Get string description of value in a MIDI Program Change message. 
-const char* ProgramName(int program) {
-    static const unsigned n = sizeof(ProgramNameTable)/sizeof(ProgramNameTable[0]);
-    Assert(n==128);
-    Assert(strcmp(ProgramNameTable[127], "Gunshot")==0);
-    if(unsigned(program)<n)
-        return ProgramNameTable[program];
-    else
+const char* Channel::programName(unsigned program) {
+    static const unsigned n0 = sizeof(Bank0NameTable)/sizeof(Bank0NameTable[0]);
+    Assert(n0==128);
+    Assert(strcmp(Bank0NameTable[127], "Gunshot")==0);
+    static const unsigned n1 = sizeof(PercussionNameTable)/sizeof(PercussionNameTable[0]);
+    Assert(n1==81-35+1);
+    Assert(strcmp(PercussionNameTable[81-35], "Open Triangle")==0);
+    if(program<128)
+        return Bank0NameTable[program];
+    else if(35<=program-128 && program-128<=81 )
+        return PercussionNameTable[program-128-35];
+    else 
         return "unknown MIDI Program Change program";
 }
 
@@ -241,13 +296,13 @@ void ChannelMap::assign(channelInfo* first, channelInfo* last) {
         if(i==last) {
             // Programs are unique.  Convert them to names.
             for(auto j=first; j!=last; ++j)
-                j->name = Midi::ProgramName(j->program);
+                j->name = Midi::Channel::programName(j->program);
         } else {
             // Fall back to channel number and program name.  Channel numbers are unqiue.  Program name is informational.
             for(auto j=first; j!=last; ++j) {
                 char buf[20];
                 std::sprintf(buf, "%u. ", j->channel);
-                j->name = std::string(buf) + Midi::ProgramName(j->program);
+                j->name = std::string(buf) + Midi::Channel::programName(j->program);
             }
         }
         std::sort(first, last, channelInfo::lessByName);
@@ -366,11 +421,12 @@ void Tune::parser::parseTrack(const uint8_t* first, const uint8_t* last) {
 #if ASSERTIONS
     Event::timeType prevTockTime = 0;
 #endif
-    unsigned status = 0;
-    unsigned channelRemap[16];
-    for( size_t i=0; i<16; ++i )
-        channelRemap[i] = ~0u;
+    const size_t nPhysicalChannel = 16 + 128;   // 16 channels + 128 fake channels for percussion
+    const unsigned nil = ~0u;                   // Denotes empty slow in channelRemap
+    unsigned channelRemap[nPhysicalChannel];
+    std::fill_n( channelRemap, nPhysicalChannel, nil );
     size_t virtualChannelBase = tune.myChannelMap.size();
+    unsigned status = 0;                        // Status byte
     while( first<last ) {
         // Compute tockTime.
         if( unsigned deltaTime = parseVariableLen(first, last) ) {
@@ -421,17 +477,44 @@ void Tune::parser::parseTrack(const uint8_t* first, const uint8_t* last) {
             }
             first += len;
         } else {
-            auto kind = c>>4;
-            unsigned virtualChannel = channelRemap[c&0xF];
-            if((kind < 0xF && virtualChannel==~0u) || kind==0xC) {
-                virtualChannel = tune.myChannelMap.size();
-                tune.myChannelMap.pushBack(Channel());
-                channelRemap[c&0xF] = virtualChannel;
-#if TUNE_LOG
-                fprintf(TuneLog, "virtual channel %d = physical channel %d\n", int(virtualChannel), int(c&0xF));
-#endif
+            const unsigned physicalDrumChannel = 9;
+            const unsigned allDrums = ~1u;
+            const auto kind = c>>4;
+            const unsigned physicalChannel = c&0xF;
+            // Figure out where to look in the channelRemap table.
+            unsigned remapIndex;
+            if( physicalChannel==physicalDrumChannel ) {
+                // Drum track has multiple virtual channels encoded on it.
+                switch(kind) {
+                    case 0x8:           // Note off
+                    case 0x9:           // Note on
+                    case 0xA:           // Note Aftertouch
+                        remapIndex = 16 + (first[0] & 0x7F);  // Note signifies the "channel"
+                        break;
+                    default:
+                        remapIndex = allDrums;   
+                        break;
+                }
+            } else {
+                remapIndex = physicalChannel;
             }
-             switch(kind) {
+            // Get the virtual channel (or create one).
+            unsigned virtualChannel;
+            if( remapIndex != allDrums ) {
+                virtualChannel = channelRemap[remapIndex];
+                if((kind < 0xF && virtualChannel==nil) || kind==0xC) {
+                    // Need to create a new virtual channel
+                    virtualChannel = tune.myChannelMap.size();
+                    tune.myChannelMap.pushBack(Channel(remapIndex<16 ? 0 : remapIndex-16+128));
+                    channelRemap[remapIndex] = virtualChannel;
+                }
+            } else {
+                virtualChannel = allDrums;
+            }
+#if TUNE_LOG
+            fprintf(TuneLog, "virtual channel %u = physical channel %d\n", int(virtualChannel), int(c&0xF));
+#endif
+            switch(kind) {
                 case 0x8:                       // Note off
                 case 0x9: {                     // Note on (though it's really "note off" if velocity is 0).
                     Event e(tockTime, virtualChannel, kind==0x8 || first[1]==0 ? Event::noteOff : Event::noteOn);
@@ -457,22 +540,34 @@ void Tune::parser::parseTrack(const uint8_t* first, const uint8_t* last) {
                     first += 2;
                     break;
                 }
-                case 0xC: {                      // Program change
-                    tune.myChannelMap.myChannels[virtualChannel].myProgram = first[0] & 0x7F;
-                    first += 1;
+                case 0xC: {                     // Program change
+                    if( virtualChannel==allDrums ) {
+                        // Not implemented
+                    } else {
+                        tune.myChannelMap.myChannels[virtualChannel].myProgram = first[0] & 0x7F;
+                        first += 1;
+                    }
                     break;
                 }
                 case 0xD: {                     // Channel aftertouch
-                    Event e(tockTime, virtualChannel, Event::channelAfterTouch);
-                    e.myAfterTouch = first[1] & 0x7F;
-                    tune.myEventSeq.pushBack(e);
+                    if( virtualChannel==allDrums ) {
+                        // Not implemented
+                    } else {
+                        Event e(tockTime, virtualChannel, Event::channelAfterTouch);
+                        e.myAfterTouch = first[1] & 0x7F;
+                        tune.myEventSeq.pushBack(e);
+                    }
                     first += 2;
                     break;  
                 }
                 case 0xE: {                     // Pitch bend
-                    Event e(tockTime, virtualChannel, Event::channelAfterTouch);
-                    e.myPitchBend = first[0] & 0x7F | (first[1] & 0x7F)<<7;
-                    tune.myEventSeq.pushBack(e);
+                    if( virtualChannel==allDrums ) {
+                        // Not implemented
+                    } else {
+                        Event e(tockTime, virtualChannel, Event::channelAfterTouch);
+                        e.myPitchBend = first[0] & 0x7F | (first[1] & 0x7F)<<7;
+                        tune.myEventSeq.pushBack(e);
+                    }
                     first += 2;
                     break;
                 }
@@ -490,7 +585,7 @@ void Tune::parser::parseTrack(const uint8_t* first, const uint8_t* last) {
             status = c;
         }
     }
-    // Should report warninga about missing end-of-track?
+    // Should report warnings about missing end-of-track?
 }
 
 void Tune::parser::canonicalizeEvents() {

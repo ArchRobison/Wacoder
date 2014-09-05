@@ -32,12 +32,10 @@ namespace Midi {
 class Tune;
 class ChannelMap;
 
-//! Get string description of value in a MIDI Program Change message. 
-const char* ProgramName(int program);
-
 //! Number of seconds per unit time increment in an Event.
 static const float SecondsPerTock = 1.0f/4096;
 
+//! An event.
 class Event {
 public:
     typedef uint32_t timeType;
@@ -93,7 +91,8 @@ public:
     // Kind of the event
     eventKind kind() const { return eventKind(myKind); }
 
-    // Channel of the event, renumbered so that channels on different tracks have unique channels.
+    // Channel of the event, renumbered so that channels on different tracks 
+    // and percussion instruments each have unique channels.
     channelType channel() const {
         return myChannel;
     } 
@@ -129,13 +128,16 @@ public:
 
 class Channel {
     std::string myName;
-    uint8_t myProgram;
+    uint8_t myProgram;  // 0-127 = MIDI instruments 128-255 = MIDI drums
     friend class Tune;
     friend class ChannelMap;
 public:
+    static const char* programName(unsigned program);
     const std::string& name() const {return myName;}
     uint8_t program() const {return myProgram;}
-    Channel() : myProgram(0) {}
+    const char* ProgramName(unsigned program) {return programName(program);} 
+    bool isDrum() const {return myProgram>=128;}
+    Channel(int program) : myProgram(program) {}
 };
 
 //! Map from channel numbers in a Event to its Channel

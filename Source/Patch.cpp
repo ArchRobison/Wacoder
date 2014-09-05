@@ -5,12 +5,12 @@
 #include <cstdio>
 #include <cstdint>
 
-PatchInstrumentBase::PatchInstrumentBase() {
+PatchInstrument::PatchInstrument() {
     for( int note=0; note<128; ++note )
         keyArray[note] = nullptr;
 }
 
-void PatchInstrumentBase::playSource( const PatchSample& ps, int note, float relFreq, float volume ) {
+void PatchInstrument::playSource( const PatchSample& ps, int note, float relFreq, float volume ) {
     Assert(!keyArray[note]);
     if( Synthesizer::PatchSource* k = Synthesizer::PatchSource::allocate(ps, relFreq, volume) ) {
         Play(k);
@@ -23,44 +23,24 @@ void PatchInstrumentBase::playSource( const PatchSample& ps, int note, float rel
     }
 }
 
-void PatchInstrumentBase::noteOff( const Event& off ) {
+void PatchInstrument::noteOff( const Event& off ) {
     release(off.note());
 }
 
-void PatchInstrumentBase::release( int note ) {
+void PatchInstrument::release( int note ) {
     if( auto*& k = keyArray[note] ) {
         k->release();
         k = nullptr;
     }
 }
 
-void PatchInstrumentBase::stop() {
+void PatchInstrument::stop() {
     for( int note=0; note<128; ++note )
         release(note);
 }
 
-PatchInstrumentBase::~PatchInstrumentBase() {
+PatchInstrument::~PatchInstrument() {
     stop();
-}
-
-class PatchInstrument: public PatchInstrumentBase {
-    const Patch& myPatch;
-    /*override*/ void noteOn( const Event& on, const Event& off );
-public:
-    PatchInstrument( const Patch& patch );
-};
-
-PatchInstrument::PatchInstrument(const Patch& patch) : myPatch(patch) {
-    Assert(!patch.empty());
-}
-
-void PatchInstrument::noteOn( const Event& on, const Event& off ) {
-    if( myPatch.empty() ) 
-        return;
-    int note = on.note();   // Used signed type, so that "note-69" can go negative
-    float freq = 440*std::pow(1.059463094f, note-69);
-    const PatchSample& ps = myPatch.find(freq);
-    playSource(ps,note,freq/ps.pitch(),on.velocity()*(1.0f/127));
 }
 
 class Patch::parser {
@@ -162,6 +142,7 @@ void Patch::parser::parseFile( const uint8_t* first, const uint8_t* last ) {
     std::memcpy(tmp,first+131,16);   // 
     tmp[16] = 0;
     patch.myInstrumentName = tmp;
+    int id = get2(first+129);
     size_t nSamples = first[198];
     patch.mySamples.resize(nSamples);
     first += 239;
@@ -205,6 +186,3 @@ const PatchSample& Patch::find( float freq ) const {
     return *result;      
 }
 
-Midi::Instrument* Patch::makeInstrument() const {
-    return new PatchInstrument(*this);
-};
