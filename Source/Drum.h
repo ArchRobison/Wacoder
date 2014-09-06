@@ -3,7 +3,7 @@
 
 #include "Patch.h"
 
-class Drum: Synthesizer::SoundSet {
+class Drum: public Synthesizer::SoundSet {
     Patch* myPatch; // FIXME - use std::unique_ptr here?
     Drum(const Drum&) = delete;
     void operator=(const Drum&) = delete;

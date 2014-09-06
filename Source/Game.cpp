@@ -15,6 +15,7 @@
 #include "Orchestra.h"
 #include "Synthesizer.h"
 #include "ChannelToWaDialog.h"
+#include "DefaultSoundSet.h"
 #include "WaPlot.h"
 #include "WaSet.h"
 #include "Widget.h"
@@ -354,6 +355,8 @@ void GameDroppedFile(NimblePoint where, const char* filename) {
                 const Synthesizer::SoundSet* s = TheSoundSetCollection.addSoundSet(name, filename);
                 if( const WaSet* w = dynamic_cast<const WaSet*>(s) )
                     CopyWaSetToWaPlot( TheWaPlot, name, *w );
+            } else if( suffix=="cfg" ) {
+                ReadFreePatConfig(filename);
             }
         }
     }

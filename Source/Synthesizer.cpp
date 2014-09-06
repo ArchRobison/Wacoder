@@ -436,7 +436,7 @@ void AsrSource::changeEnvelope(Envelope& e, float speed) {
 static PoolAllocator<PatchSource> PatchSourceAllocator(64,false);
 
 PatchSource* PatchSource::allocate( const PatchSample& ps, float relativeFrequency, float volume ) {
-    Assert( 0.25f <= relativeFrequency && relativeFrequency <= 4.0f ); // Sanity check
+    Assert( 0.0625f <= relativeFrequency && relativeFrequency <= 4.0f ); // Sanity check
     PatchSource* s = PatchSourceAllocator.allocate();
     if( s ) {
         new(s) PatchSource;

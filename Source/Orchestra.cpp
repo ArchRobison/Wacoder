@@ -3,6 +3,8 @@
 #include "Synthesizer.h"
 #include "Host.h"
 #include "Patch.h"
+#include "DefaultSoundSet.h"
+#include "ReadError.h"
 
 //-----------------------------------------------------------------
 // MidiInstrument subclasses
@@ -172,11 +174,22 @@ void Orchestra::commencePlay() {
     // Add default instruments
     for( unsigned k=0; k<myEnsemble.size(); ++k ) {
         Instrument*& i = myEnsemble[k];
-        if(!i)
+        if(!i) {
+            const Channel& c = myTune->channels()[k];
+            try {
+                const auto* s = GetDefaultSoundSet(c.program());
+                if( s )
+                    i = s->makeInstrument();
+            } catch( const ReadError& ) {
+                // FIXME - report error to user
+            }
+        }
+        if(!i) {
             if(myTune->channels()[k].isDrum() )
                 i = new NullInstrument();       // FIXME
             else
                 i = new AdditiveInstrument();
+        }
     }
     // Get absolute time
     myZeroTime = HostClockTime();

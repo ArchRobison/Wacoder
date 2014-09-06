@@ -45,47 +45,62 @@ PatchInstrument::~PatchInstrument() {
 
 class Patch::parser {
     Patch& patch;
+    uint8_t samplingMode;
+    float scaleFactor;
     void throwError(const char* format, unsigned value=0);
     const uint8_t* parseSample(PatchSample& ps, const uint8_t* first, const uint8_t* last);
     static unsigned get4( const uint8_t* first ) {
         return first[0] | first[1]<<8 | first[2]<<16 | first[3]<<24;
     }
-    unsigned get4asSampleCount( const uint8_t* first, uint8_t samplingMode ) {
+    unsigned get4asSampleCount( const uint8_t* first, bool acceptOdd=false ) {
         unsigned bytes = get4(first);
-        Assert( (samplingMode & 1)==0 || bytes%2==0 );
+        Assert( (samplingMode & 1)==0 || bytes%2==0 || acceptOdd );
         return bytes >> (samplingMode&1);
     }
     //! Get frequency from raw 4 bytes and convert it to hertz.
     float get4asFrequency( const uint8_t* first ) {
         unsigned value = get4(first);
-        return value*(1/1024.f);    // FIXME - 1024 should not be hardwired.  There are bytes in the file that define it.
+        return value/scaleFactor;   
     }
     static unsigned get2( const uint8_t* first ) {
         return first[0] | first[1]<<8;
     }
+    const uint8_t* convertSamples( float* dst, const uint8_t* first, size_t n );
 public:
     parser( Patch& patch_ ) : patch(patch_) {}
     void parseFile( const uint8_t* first, const uint8_t* last );
 };
 
+const uint8_t* Patch::parser::convertSamples( float* dst, const uint8_t* first, size_t n ) {
+    bool isUnsigned = (samplingMode & 2)!=0;
+    for(size_t i=0; i<n; ++i) {
+        int value = first[0] | first[1]<<8;
+        // Convert to normalized float data
+        dst[i] = (isUnsigned ? float(value-0x8000) : float(int16_t(value)))*(1.0f/0x8000);
+        first += 2;
+    }
+    return first;
+}
+
 const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first, const uint8_t* last) {
     if( last-first<96 )
         throwError("sample header truncated");
     uint8_t fractions = first[7];
-    uint8_t samplingMode = first[55];
+    samplingMode = first[55];
+    scaleFactor = get2(first+58);
     // >> in next three lines converts bytes to 
-    uint32_t dataSize = get4asSampleCount(first+8,samplingMode);
-    uint32_t banana = dataSize<<PatchSample::timeShift>>PatchSample::timeShift;
+    uint32_t dataSize = get4asSampleCount(first+8);
     if( dataSize<<PatchSample::timeShift>>PatchSample::timeShift != dataSize ) {
         Assert(0);
         throwError("too much data in a sample");
     }
-    uint32_t loopStart = get4asSampleCount(first+12,samplingMode);
-    uint32_t loopEnd = get4asSampleCount(first+16,samplingMode);
+    // 042_Hi-Hat_Closed.pat has odd LoopStart and LoopEnd.  Maybe extra bit is an extra fraction bit?
+    uint32_t loopStart = get4asSampleCount(first+12,/*acceptOdd=*/true);
+    uint32_t loopEnd = get4asSampleCount(first+16,/*acceptOdd=*/true);
     ps.mySampleRate = float(get2(first+20));
     ps.myLowFreq = get4asFrequency(first+22); 
     ps.myHighFreq = get4asFrequency(first+26); 
-    ps.myRootFreq = get4asFrequency(first+30);    
+    ps.myRootFreq = get4asFrequency(first+30);  
     Assert((samplingMode&(1<<3|1<<4))==0);     // Ping-pong/reverse not supported yet
     first += 96;
     if( samplingMode&1 ) {
@@ -93,14 +108,7 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
         if( size_t(last-first)<2*dataSize )
             throwError("sample data truncated");
         ps.resize(dataSize);
-        int isUnsigned = (samplingMode & 2)!=0;
-        float* base = ps.begin();
-        for( size_t i=0; i<dataSize; ++i ) {
-            int value = first[0] | first[1]<<8;
-            // Convert to normalized float data
-            base[i] = (isUnsigned ? float(value-0x8000) : float(int16_t(value)))*(1.0f/0x8000);
-            first += 2;
-        }
+        first = convertSamples(ps.begin(), first, dataSize); 
         ps.complete(false);
     } else {
         Assert(0);  // Not yet implemented
