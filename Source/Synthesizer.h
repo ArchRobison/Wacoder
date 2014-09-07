@@ -3,6 +3,7 @@
 
 #include "Utility.h"
 #include "Waveform.h"
+#include "NonblockingQueue.h"
 #include <new>
 #include <cstdint>
 
@@ -30,6 +31,34 @@ private:
         2-> method complete has not been called yet */
     char myIsSustain;
 };
+
+enum class PlayerMessageKind: char {
+    Start,
+    ChangeVolume,                   // Used by DynamicSource
+    ChangeEnvelope,                 // Used by AsrSource
+    Release                         // Used by PatchSource
+};
+
+class Player;
+
+class PlayerMessage {   // FIXME - find a better name
+public:
+    PlayerMessageKind kind;             // Really a PlayerMessageKind
+    Player* player;
+    union {
+        struct {                        // kind==WMK_ChangeEnvelope
+            const Envelope* envelope;
+            Envelope::timeType envDelta;                     
+        } midi;
+        struct {                        // kind==WMK_ChangeVolume
+            float newVolume;  
+            unsigned deadline:31;
+            unsigned release:1;
+        } dynamic; 
+    };
+};
+
+extern NonblockingQueue<PlayerMessage> PlayerMessageQueue;
 
 class Player;
 class PlayerMessage;
@@ -101,59 +130,6 @@ class AsrSource: public Source {
 public:
     static AsrSource* allocate( const Waveform& w, float freq, const Envelope& attack, float speed=1.0f );
     void changeEnvelope(Envelope& e, float speed=1.0f );
-};
-
-//! Source based on a Patch object.
-class PatchSource: public Source {
-public:
-    enum class stateType : uint8_t {
-        forwardFinal=0,       // Go forwards until tableEnd is reached, then finished
-        forwardBounce=1,      // Go forwards until loopEnd is reached, then switch to reverseBounce
-        reverseFinal=2,       // Go backwards until loopStart is reached, then switch to forwarFinal 
-        reverseBounce=3,      // Go backwards until loopStart is reached, then switch to forwardBounce
-        finished=4,           // Destroy self
-        forwardLoop=5,        // Go forwards until loopEnd is reached, then jump to loopStart
-    };
-    //! True for states that walk backwards through wave table.
-    static bool isReverse(stateType s) {
-        Assert(unsigned(s)<=5);
-        return (unsigned(s) & 2)!=0;
-    }
-    //! True for states that are part of loop.
-    static bool isLooping(stateType s) {
-        Assert(unsigned(s)<=5);
-        return (unsigned(s)&1) != 0;
-    }
-    //! Return successor state for bouncing from current state.
-    /** Invalid for non-bouncing states. */
-    static stateType bounce(stateType s) {
-        Assert(s==stateType::forwardBounce||s==stateType::reverseFinal||s==stateType::reverseBounce);
-        return stateType(uint8_t(s)^2);
-    }
-    //! Return successor state for getting out of loop.
-    /** Invalid for non-looping states. */
-    static stateType release(stateType s) {
-        Assert(isLooping(s));
-        return stateType(unsigned(s)&~5u);
-    }
-private:
-    const Waveform* waveform;
-    float volume;
-    Waveform::timeType waveDelta;
-    Waveform::timeType waveIndex;
-    Waveform::timeType loopStart;
-    Waveform::timeType loopEnd;
-    Waveform::timeType tableEnd;
-    stateType state;
-#if ASSERTIONS
-    bool assertOkay();
-#endif
-    /*override*/ unsigned update( float* acc, unsigned n );
-    /*override*/ void destroy();
-    /*override*/ void receive( const PlayerMessage& m );
-public:
-    static PatchSource* allocate( const PatchSample& patch, float relativeFrequency, float volume );
-    void release();
 };
 
 //! Intialize synthesizer global structures.

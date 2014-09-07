@@ -12,30 +12,6 @@ namespace Synthesizer {
 //---------------------------------------------------------------
 class Player;
 
-enum class PlayerMessageKind: char {
-    Start,
-    ChangeVolume,                   // Used by DynamicSource
-    ChangeEnvelope,                 // Used by AsrSource
-    Release                         // Used by PatchSource
-};
-
-class PlayerMessage {
-public:
-    PlayerMessageKind kind;             // Really a PlayerMessageKind
-    Player* player;
-    union {
-        struct {                        // kind==WMK_ChangeEnvelope
-            const Envelope* envelope;
-            Envelope::timeType envDelta;                     
-        } midi;
-        struct {                        // kind==WMK_ChangeVolume
-            float newVolume;  
-            unsigned deadline:31;
-            unsigned release:1;
-        } dynamic; 
-    };
-};
-
 //-----------------------------------------------------------
 // Player
 //-----------------------------------------------------------
@@ -107,7 +83,7 @@ bool Player::update( float* left, float* right, unsigned n ) {
 
 //! Queue for sending messages from main code to interrupt handler.
 /** Allow for one sustain and one release message.  FIXME - determine right queue bound */
-static NonblockingQueue<PlayerMessage> PlayerMessageQueue(1024);
+NonblockingQueue<PlayerMessage> PlayerMessageQueue(1024);
 
 //! Queue for sending freed Players from interrupt handler to normal code. 
 static NonblockingQueue<Player*> FreePlayerQueue(PlayerCountMax);
@@ -428,136 +404,6 @@ void AsrSource::changeEnvelope(Envelope& e, float speed) {
     m->midi.envDelta = Envelope::timeType(speed*Envelope::unitTime);
     Assert( (size_t(player)&3)==0 );
     PlayerMessageQueue.finishPush();
-}
-
-//-----------------------------------------------------------
-// PatchSource
-//-----------------------------------------------------------
-static PoolAllocator<PatchSource> PatchSourceAllocator(64,false);
-
-PatchSource* PatchSource::allocate( const PatchSample& ps, float relativeFrequency, float volume ) {
-    Assert( 0.0625f <= relativeFrequency && relativeFrequency <= 8.0f ); // Sanity check
-    PatchSource* s = PatchSourceAllocator.allocate();
-    if( s ) {
-        new(s) PatchSource;
-        s->waveform = &ps;
-        s->waveIndex = 0;
-        s->waveDelta = unsigned( ps.sampleRate()/Synthesizer::SampleRate*Waveform::unitTime*relativeFrequency + 0.5f);
-        s->volume = volume;
-        Assert( s->waveDelta<=Waveform::unitTime*256 ); // Sanity check
-        Assert( s->waveDelta>=Waveform::unitTime/256 ); // Sanity check
-        s->loopStart = ps.myLoopStart;
-        s->loopEnd = ps.myLoopEnd;
-        s->tableEnd = ps.size() << PatchSample::timeShift;
-        s->state = ps.myInitialState;
-        Assert(s->assertOkay());
-    } 
-    return s;
-}
-
-void PatchSource::destroy() {
-    PatchSourceAllocator.destroy(this);
-}
-
-void PatchSource::release() {
-    Assert( (size_t(player)&3)==0 );
-    PlayerMessage* m = PlayerMessageQueue.startPush();
-    m->kind = PlayerMessageKind::Release;
-    m->player = player;
-    PlayerMessageQueue.finishPush();
-}
-
-void PatchSource::receive( const PlayerMessage& m ) {
-    Assert( m.kind==PlayerMessageKind::Release );
-    state = release(state); 
-}
-
-#if ASSERTIONS
-bool PatchSource::assertOkay() {
-    switch(state) {
-        default:
-            Assert(0);
-        case stateType::finished:
-            Assert( waveIndex>=tableEnd );
-            break;
-        case stateType::forwardFinal:
-            Assert( waveIndex<tableEnd );
-            break;
-        case stateType::forwardBounce:
-        case stateType::forwardLoop:
-            Assert( waveIndex < loopEnd );
-            Assert( loopEnd <= waveform->size()<<waveform->timeShift );
-            break;
-        case stateType::reverseBounce:
-        case stateType::reverseFinal:
-            Assert( loopStart <= waveIndex );
-            Assert( waveIndex <= loopEnd );
-            break;
-    }
-    return true;
-}
-#endif
-
-unsigned PatchSource::update( float* acc, unsigned requested ) {
-    Assert(assertOkay());
-    unsigned n = requested;
-    while(n>0 && state!=stateType::finished) {
-        // Set d to maximum time difference that can be covered before state change.
-        Waveform::timeType d;
-        switch( state ) {
-            default:
-                Assert(0);
-            case stateType::forwardFinal: 
-                d = tableEnd-waveIndex;
-                break;
-            case stateType::forwardBounce:
-            case stateType::forwardLoop:
-                d = loopEnd-waveIndex;
-                break;
-            case stateType::reverseFinal:
-            case stateType::reverseBounce:
-                d = waveIndex-loopStart;
-                break;
-        }
-        unsigned m = (d+waveDelta-1)/waveDelta;
-        bool newState = m<=n;   // True if state machine should be advanced after calling resample
-        if( newState ) {
-            n -= m;
-        } else {
-            m = n;
-            n = 0;
-        }
-#pragma warning( disable : 4146 )
-        waveIndex = waveform->resample(acc, volume, waveIndex, isReverse(state) ? -waveDelta : waveDelta, m);
-        acc += m;
-        if( newState ) {
-            switch( state ) {
-                default:
-                    Assert(0);
-                case stateType::forwardFinal:
-                    state = stateType::finished;
-                    break;
-                case stateType::forwardLoop:
-                    Assert(waveIndex-waveDelta<loopEnd);
-                    Assert(loopEnd<=waveIndex);
-                    waveIndex -= loopEnd-loopStart;
-                    Assert(loopStart <= waveIndex);
-                    Assert(waveIndex-waveDelta<loopStart);
-                    break;
-                case stateType::forwardBounce:
-                    waveIndex = 2*loopEnd - waveIndex;
-                    state = stateType::reverseBounce;
-                    break;
-                case stateType::reverseBounce:
-                case stateType::reverseFinal:
-                    waveIndex = 2*loopStart-waveIndex;
-                    state = bounce(state);
-                    break;
-            }
-        }
-        Assert(assertOkay());
-    }
-    return requested-n;
 }
 
 void Initialize() {
