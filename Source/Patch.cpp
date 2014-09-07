@@ -47,6 +47,16 @@ class Patch::parser {
     Patch& patch;
     uint8_t samplingMode;
     float scaleFactor;
+    enum SamplingModeFlags {
+        SM_16bit=1<<0,
+        SM_Unsigned=1<<1,
+        SM_Looping=1<<2,
+        SM_PingPong=1<<3,
+        SM_Reverse=1<<4,
+        SM_Sustain=1<<5,
+        SM_Envelope=1<<6,
+        SM_ClampedRelease=1<<7
+    };
     void throwError(const char* format, unsigned value=0);
     const uint8_t* parseSample(PatchSample& ps, const uint8_t* first, const uint8_t* last);
     static unsigned get4( const uint8_t* first ) {
@@ -54,7 +64,7 @@ class Patch::parser {
     }
     unsigned get4asSampleCount( const uint8_t* first, bool acceptOdd=false ) {
         unsigned bytes = get4(first);
-        Assert( (samplingMode & 1)==0 || bytes%2==0 || acceptOdd );
+        Assert( (samplingMode & SM_16bit)==0 || bytes%2==0 || acceptOdd );
         return bytes >> (samplingMode&1);
     }
     //! Get frequency from raw 4 bytes and convert it to hertz.
@@ -72,7 +82,7 @@ public:
 };
 
 const uint8_t* Patch::parser::convertSamples( float* dst, const uint8_t* first, size_t n ) {
-    bool isUnsigned = (samplingMode & 2)!=0;
+    bool isUnsigned = (samplingMode & SM_Unsigned)!=0;
     for(size_t i=0; i<n; ++i) {
         int value = first[0] | first[1]<<8;
         // Convert to normalized float data
@@ -88,7 +98,6 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
     uint8_t fractions = first[7];
     samplingMode = first[55];
     scaleFactor = get2(first+58);
-    // >> in next three lines converts bytes to 
     uint32_t dataSize = get4asSampleCount(first+8);
     if( dataSize<<PatchSample::timeShift>>PatchSample::timeShift != dataSize ) {
         Assert(0);
@@ -101,9 +110,9 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
     ps.myLowFreq = get4asFrequency(first+22); 
     ps.myHighFreq = get4asFrequency(first+26); 
     ps.myRootFreq = get4asFrequency(first+30);  
-    Assert((samplingMode&(1<<3|1<<4))==0);     // Ping-pong/reverse not supported yet
+    Assert((samplingMode&(SM_Reverse))==0);     // reverse not supported yet
     first += 96;
-    if( samplingMode&1 ) {
+    if( samplingMode & SM_16bit ) {
         // 16-bit data
         if( size_t(last-first)<2*dataSize )
             throwError("sample data truncated");
@@ -112,18 +121,22 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
         ps.complete(false);
     } else {
         Assert(0);  // Not yet implemented
+        throwError("8-bit patches not supported");
     }
-    if(samplingMode & 1<<2) {
+    typedef PatchSample::stateType stateType;
+    if(samplingMode & (SM_Looping|SM_PingPong)) {
         // Looping
         Assert(PatchSample::timeShift>=4);
         Assert(loopStart<=loopEnd);
         Assert(loopEnd<=ps.size());
         ps.myLoopStart = loopStart << PatchSample::timeShift | (fractions>>4) << (PatchSample::timeShift-4);
         ps.myLoopEnd = loopEnd << PatchSample::timeShift | (fractions&0xF) << (PatchSample::timeShift-4);
-    } else {
+        ps.myInitialState = samplingMode&SM_PingPong ? stateType::forwardBounce : stateType::forwardLoop;
+   } else {
         // Non-looping
         ps.myLoopStart = ~0u;
         ps.myLoopEnd = ~0u;
+        ps.myInitialState = stateType::forwardFinal;
     }
     return first;
 }

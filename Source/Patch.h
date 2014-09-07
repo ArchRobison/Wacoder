@@ -1,7 +1,7 @@
 #ifndef Patch_H
 #define Patch_H
 
-#include "Waveform.h"
+#include "Synthesizer.h"
 #include "Utility.h"
 #include "Orchestra.h"
 #include <string>
@@ -9,19 +9,22 @@
 class Patch;
 
 class PatchSample: public Synthesizer::Waveform {
-    // ~timeType(0) if not a looping patch.
+    // ~timeType(0) if not a looping/ping-pong patch.
     timeType myLoopStart;
-    // ~timeType(0) if not a looping patch.
+    // ~timeType(0) if not a looping/ping-pong patch.
     timeType myLoopEnd;
     float myHighFreq;
     float myLowFreq;
     // Nominal pitch
     float myRootFreq;  
-    float mySampleRate;
+    float mySampleRate;  
+    typedef Synthesizer::PatchSource::stateType stateType;
+    stateType myInitialState;
     friend class Patch;
+    friend class Synthesizer::PatchSource;
 public:
     bool isLooping() const {
-        return myLoopStart<~timeType(0);
+        return Synthesizer::PatchSource::isLooping(myInitialState); 
     }
     timeType loopStart() const {
         Assert(isLooping());

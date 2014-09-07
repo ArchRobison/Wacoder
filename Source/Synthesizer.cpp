@@ -436,7 +436,7 @@ void AsrSource::changeEnvelope(Envelope& e, float speed) {
 static PoolAllocator<PatchSource> PatchSourceAllocator(64,false);
 
 PatchSource* PatchSource::allocate( const PatchSample& ps, float relativeFrequency, float volume ) {
-    Assert( 0.0625f <= relativeFrequency && relativeFrequency <= 4.0f ); // Sanity check
+    Assert( 0.0625f <= relativeFrequency && relativeFrequency <= 8.0f ); // Sanity check
     PatchSource* s = PatchSourceAllocator.allocate();
     if( s ) {
         new(s) PatchSource;
@@ -446,17 +446,11 @@ PatchSource* PatchSource::allocate( const PatchSample& ps, float relativeFrequen
         s->volume = volume;
         Assert( s->waveDelta<=Waveform::unitTime*256 ); // Sanity check
         Assert( s->waveDelta>=Waveform::unitTime/256 ); // Sanity check
+        s->loopStart = ps.myLoopStart;
+        s->loopEnd = ps.myLoopEnd;
         s->tableEnd = ps.size() << PatchSample::timeShift;
-        if( ps.isLooping() ) {
-            s->loopEnd = ps.loopEnd();
-            Assert( ps.loopEnd()>ps.loopStart() );
-            s->loopDelta = ps.loopEnd() - ps.loopStart();
-        } else {
-            s->loopEnd = s->tableEnd;
-            s->loopDelta = 0;
-        }
-        Assert(s->loopEnd>>ps.timeShift <= ps.size());
-        Assert(s->loopDelta<=s->loopEnd);
+        s->state = ps.myInitialState;
+        Assert(s->assertOkay());
     } 
     return s;
 }
@@ -475,30 +469,95 @@ void PatchSource::release() {
 
 void PatchSource::receive( const PlayerMessage& m ) {
     Assert( m.kind==PlayerMessageKind::Release );
-    loopEnd = tableEnd;   
+    state = release(state); 
 }
 
-unsigned PatchSource::update( float* acc, unsigned n ) {
-    const Waveform::sampleType* w = waveform->begin();
-    Waveform::timeType di = waveDelta;
-    Waveform::timeType i = waveIndex;
-    float volume = this->volume;
-    unsigned k=0;
-    while(k<n) {
-        if(i>=loopEnd) 
-            if( i<tableEnd ) 
-                // Wrap
-                i -= loopDelta;
-            else 
-                // End of waveform
-                break;
-        // Create wave sample by interpolating waveTable  
-        acc[k++] = waveform->interpolate(w, i)*volume;
-        // Update waveIndex and wrap around if necessary. 
-        i += di;
+#if ASSERTIONS
+bool PatchSource::assertOkay() {
+    switch(state) {
+        default:
+            Assert(0);
+        case stateType::finished:
+            Assert( waveIndex>=tableEnd );
+            break;
+        case stateType::forwardFinal:
+            Assert( waveIndex<tableEnd );
+            break;
+        case stateType::forwardBounce:
+        case stateType::forwardLoop:
+            Assert( waveIndex < loopEnd );
+            Assert( loopEnd <= waveform->size()<<waveform->timeShift );
+            break;
+        case stateType::reverseBounce:
+        case stateType::reverseFinal:
+            Assert( loopStart <= waveIndex );
+            Assert( waveIndex <= loopEnd );
+            break;
     }
-    waveIndex = i;
-    return k;
+    return true;
+}
+#endif
+
+unsigned PatchSource::update( float* acc, unsigned requested ) {
+    Assert(assertOkay());
+    unsigned n = requested;
+    while(n>0 && state!=stateType::finished) {
+        // Set d to maximum time difference that can be covered before state change.
+        Waveform::timeType d;
+        switch( state ) {
+            default:
+                Assert(0);
+            case stateType::forwardFinal: 
+                d = tableEnd-waveIndex;
+                break;
+            case stateType::forwardBounce:
+            case stateType::forwardLoop:
+                d = loopEnd-waveIndex;
+                break;
+            case stateType::reverseFinal:
+            case stateType::reverseBounce:
+                d = waveIndex-loopStart;
+                break;
+        }
+        unsigned m = (d+waveDelta-1)/waveDelta;
+        bool newState = m<=n;   // True if state machine should be advanced after calling resample
+        if( newState ) {
+            n -= m;
+        } else {
+            m = n;
+            n = 0;
+        }
+#pragma warning( disable : 4146 )
+        waveIndex = waveform->resample(acc, volume, waveIndex, isReverse(state) ? -waveDelta : waveDelta, m);
+        acc += m;
+        if( newState ) {
+            switch( state ) {
+                default:
+                    Assert(0);
+                case stateType::forwardFinal:
+                    state = stateType::finished;
+                    break;
+                case stateType::forwardLoop:
+                    Assert(waveIndex-waveDelta<loopEnd);
+                    Assert(loopEnd<=waveIndex);
+                    waveIndex -= loopEnd-loopStart;
+                    Assert(loopStart <= waveIndex);
+                    Assert(waveIndex-waveDelta<loopStart);
+                    break;
+                case stateType::forwardBounce:
+                    waveIndex = 2*loopEnd - waveIndex;
+                    state = stateType::reverseBounce;
+                    break;
+                case stateType::reverseBounce:
+                case stateType::reverseFinal:
+                    waveIndex = 2*loopStart-waveIndex;
+                    state = bounce(state);
+                    break;
+            }
+        }
+        Assert(assertOkay());
+    }
+    return requested-n;
 }
 
 void Initialize() {

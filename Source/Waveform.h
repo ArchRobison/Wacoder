@@ -15,6 +15,7 @@ public:
     static const int timeShift = Shift;
     static const unsigned unitTime = (1<<timeShift);
     timeType limit() const {return size()<<timeShift;}
+    // Deprecate?
     float interpolate( const T* w, timeType t ) const {
         size_t i = t>>timeShift;
         Assert( w+i<end() );
@@ -23,7 +24,26 @@ public:
         float f = (t & unitTime-1)*(1.0f/unitTime);
         return s0+(s1-s0)*f;
     }
+    // Compute n samples and accumulate them into output. Returns t0+n*dt.
+    timeType resample( T* output, float volume, timeType t, timeType dt, size_t n ) const;
 };
+
+template<typename T, int Shift>
+auto SampledSignalBase<T,Shift>::resample( T* output, float volume, timeType t, timeType dt, size_t n ) const -> timeType {
+    Assert( t < size()<<timeShift );
+    Assert( t+(n-1)*dt < size()<<timeShift );
+    const T* w = begin();
+    for( ; n>0; t+=dt, --n ) {
+        // FIXME - use FIR filter bank to interpolate more accurately? 
+        size_t i = t>>timeShift;
+        sampleType s0 = w[i];
+        sampleType s1 = w[i+1];
+        float f = (t & unitTime-1)*(1.0f/unitTime);
+        // FIXME - redo algebra to shorten dependence chain or exploit FMA?
+        *output++ = (s0+(s1-s0)*f)*volume;
+    }
+    return t;
+}
 
 class Waveform: public SampledSignalBase<float,12> {
 public:

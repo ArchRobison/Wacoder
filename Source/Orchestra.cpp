@@ -180,6 +180,8 @@ void Orchestra::commencePlay() {
                 const auto* s = GetDefaultSoundSet(c.program());
                 if( s )
                     i = s->makeInstrument();
+                else
+                    i = nullptr;
             } catch( const ReadError& ) {
                 // FIXME - report error to user
             }

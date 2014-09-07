@@ -4,6 +4,7 @@
 #include "Utility.h"
 #include "Waveform.h"
 #include <new>
+#include <cstdint>
 
 class PatchSample;
 
@@ -82,9 +83,9 @@ public:
     void changeVolume( float newVolume, float deadline, bool release=false );
 };
 
-//! Source whose envelope can be set on the fly. 
-/** Useful for Attack-sustain-release synthesis.  
-    Will eventually be superceded by PatchSource. */
+//! Deprecated.  Use PatchSource instead.
+/** Source whose envelope can be set on the fly. 
+    Useful for Attack-sustain-release synthesis. */
 class AsrSource: public Source {
     const Waveform* waveform;
     Waveform::timeType waveIndex;
@@ -104,14 +105,49 @@ public:
 
 //! Source based on a Patch object.
 class PatchSource: public Source {
+public:
+    enum class stateType : uint8_t {
+        forwardFinal=0,       // Go forwards until tableEnd is reached, then finished
+        forwardBounce=1,      // Go forwards until loopEnd is reached, then switch to reverseBounce
+        reverseFinal=2,       // Go backwards until loopStart is reached, then switch to forwarFinal 
+        reverseBounce=3,      // Go backwards until loopStart is reached, then switch to forwardBounce
+        finished=4,           // Destroy self
+        forwardLoop=5,        // Go forwards until loopEnd is reached, then jump to loopStart
+    };
+    //! True for states that walk backwards through wave table.
+    static bool isReverse(stateType s) {
+        Assert(unsigned(s)<=5);
+        return (unsigned(s) & 2)!=0;
+    }
+    //! True for states that are part of loop.
+    static bool isLooping(stateType s) {
+        Assert(unsigned(s)<=5);
+        return (unsigned(s)&1) != 0;
+    }
+    //! Return successor state for bouncing from current state.
+    /** Invalid for non-bouncing states. */
+    static stateType bounce(stateType s) {
+        Assert(s==stateType::forwardBounce||s==stateType::reverseFinal||s==stateType::reverseBounce);
+        return stateType(uint8_t(s)^2);
+    }
+    //! Return successor state for getting out of loop.
+    /** Invalid for non-looping states. */
+    static stateType release(stateType s) {
+        Assert(isLooping(s));
+        return stateType(unsigned(s)&~5u);
+    }
+private:
     const Waveform* waveform;
     float volume;
     Waveform::timeType waveDelta;
     Waveform::timeType waveIndex;
+    Waveform::timeType loopStart;
     Waveform::timeType loopEnd;
     Waveform::timeType tableEnd;
-    // loop start minus the loop end, i.e. the amount to jump back after crossing the loopEnd.
-    Waveform::timeType loopDelta;
+    stateType state;
+#if ASSERTIONS
+    bool assertOkay();
+#endif
     /*override*/ unsigned update( float* acc, unsigned n );
     /*override*/ void destroy();
     /*override*/ void receive( const PlayerMessage& m );
