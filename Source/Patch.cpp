@@ -150,7 +150,7 @@ const uint8_t* Patch::parser::parseSample(PatchSample& ps, const uint8_t* first,
         Assert(0);  // Not yet implemented
         throwError("8-bit patches not supported");
     }
-    if(samplingMode & (SM_Looping|SM_PingPong)) {
+    if( samplingMode & (SM_Looping|SM_PingPong) ) {
         // Looping
         Assert(PatchSample::timeShift>=4);
         Assert(loopStart<=loopEnd);
