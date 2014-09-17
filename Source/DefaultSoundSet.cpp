@@ -1,8 +1,6 @@
 #include "DefaultSoundSet.h"
 #include "ReadError.h"
-#include "Patch.h"
-#include "Drum.h"
-#include "ToneSet.h"
+#include "SF2Bank.h"
 #include <cstdio>
 
 static void SkipSpace( char*& p ) {
@@ -43,6 +41,36 @@ enum class BankKind {
     unknown
 };
 
+static SF2Bank TheDefaultBank;
+
+void ReadSF2( const std::string& path ) {
+    TheDefaultBank.load(path);
+}
+
+struct SF2Info {
+    std::string subpath;
+    Synthesizer::SoundSet* soundSet;
+    SF2Info() : soundSet(nullptr) {}
+};
+
+static SF2Info SF2Cache[256];
+
+Synthesizer::SoundSet* GetDefaultSoundSet( unsigned midiNumber ) {
+#if 0
+    midiNumber = 57;    // Force to trombone
+#endif
+    Assert(midiNumber<256);
+    auto& rec = SF2Cache[midiNumber];
+    if( !rec.soundSet && !TheDefaultBank.empty() ) {
+        if( midiNumber>=128 ) {
+            rec.soundSet = TheDefaultBank.createSoundSet(midiNumber-128,/*bank=*/1);
+        } else
+            rec.soundSet = TheDefaultBank.createSoundSet(midiNumber,/*bank=*/0);
+    }
+    return rec.soundSet;
+}
+
+// All GUS Patch stuff to be deleted.
 static std::string FreePatDir;
 
 struct PatchInfo {
@@ -52,20 +80,6 @@ struct PatchInfo {
 };
 
 static PatchInfo FreePatCache[256];
-
-Synthesizer::SoundSet* GetDefaultSoundSet( unsigned midiNumber ) {
-    Assert(midiNumber<256);
-    auto& rec = FreePatCache[midiNumber];
-    if( !rec.soundSet && !rec.subpath.empty() ) {
-        // Not loaded yet.  Try loading it.
-        Patch* patch = new Patch(FreePatDir+rec.subpath); 
-        if( midiNumber>=128 )
-            rec.soundSet = new Drum(patch);
-        else
-            rec.soundSet = new ToneSet(patch);
-    }
-    return rec.soundSet;
-}
 
 void ReadFreePatConfig( const std::string& path ) {
     FILE* f = std::fopen(path.c_str(),"r");

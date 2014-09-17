@@ -87,7 +87,8 @@ class SF2SoundSet: public Synthesizer::SoundSet {
         const playInfo& find( unsigned note, unsigned velocity ) const;
     };
 
-    noteVelocityMap myPresetMap;                    // Index is into myInstrumentMap
+    noteVelocityMap myPresetMap
+        ;                    // Index is into myInstrumentMap
     SimpleArray<noteVelocityMap> myInstrumentMap;   // Index is into mySamples
     SimpleArray<SF2Sample> mySamples;
     bool myIsDrum;

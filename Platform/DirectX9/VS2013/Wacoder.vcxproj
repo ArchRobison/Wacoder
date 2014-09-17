@@ -45,7 +45,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\..\Source;C:\Program Files (x86)\Intel\Composer XE 2013 SP1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -61,7 +61,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(ProjectDir)\..\..\..\Source;C:\Program Files (x86)\Intel\Composer XE 2013 SP1;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;ASSERTIONS=0</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);_CRT_SECURE_NO_WARNINGS;_SCL_SECURE_NO_WARNINGS;ASSERTIONS=0</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -75,7 +75,6 @@
     <ClCompile Include="..\..\..\Source\AssertLib.cpp" />
     <ClCompile Include="..\..\..\Source\BuiltFromResource.cpp" />
     <ClCompile Include="..\..\..\Source\Clickable.cpp" />
-    <ClCompile Include="..\..\..\Source\Drum.cpp" />
     <ClCompile Include="..\..\..\Source\FileSuffix.cpp" />
     <ClCompile Include="..\..\..\Source\DefaultSoundSet.cpp" />
     <ClCompile Include="..\..\..\Source\Game.cpp" />
@@ -84,12 +83,13 @@
     <ClCompile Include="..\..\..\Source\NimbleDraw.cpp" />
     <ClCompile Include="..\..\..\Source\NimbleSound.cpp" />
     <ClCompile Include="..\..\..\Source\Orchestra.cpp" />
-    <ClCompile Include="..\..\..\Source\Patch.cpp" />
     <ClCompile Include="..\..\..\Source\ReadError.cpp" />
+    <ClCompile Include="..\..\..\Source\SF2Bank.cpp" />
+    <ClCompile Include="..\..\..\Source\SF2Reader.cpp" />
+    <ClCompile Include="..\..\..\Source\SF2SoundSet.cpp" />
     <ClCompile Include="..\..\..\Source\SmallMark.cpp" />
     <ClCompile Include="..\..\..\Source\SoundSetCollection.cpp" />
     <ClCompile Include="..\..\..\Source\Synthesizer.cpp" />
-    <ClCompile Include="..\..\..\Source\ToneSet.cpp" />
     <ClCompile Include="..\..\..\Source\TraceLib.cpp" />
     <ClCompile Include="..\..\..\Source\ChannelToWaDialog.cpp" />
     <ClCompile Include="..\..\..\Source\VoiceInput.cpp" />
@@ -107,7 +107,6 @@
     <ClInclude Include="..\..\..\Source\BuiltFromResource.h" />
     <ClInclude Include="..\..\..\Source\Clickable.h" />
     <ClInclude Include="..\..\..\Source\Config.h" />
-    <ClInclude Include="..\..\..\Source\Drum.h" />
     <ClInclude Include="..\..\..\Source\FileSuffix.h" />
     <ClInclude Include="..\..\..\Source\DefaultSoundSet.h" />
     <ClInclude Include="..\..\..\Source\Game.h" />
@@ -123,11 +122,13 @@
     <ClInclude Include="..\..\..\Source\Patch.h" />
     <ClInclude Include="..\..\..\Source\PoolAllocator.h" />
     <ClInclude Include="..\..\..\Source\ReadError.h" />
+    <ClInclude Include="..\..\..\Source\SF2Bank.h" />
+    <ClInclude Include="..\..\..\Source\SF2SoundSet.h" />
+    <ClInclude Include="..\..\..\Source\SF2Reader.h" />
     <ClInclude Include="..\..\..\Source\SmallMark.h" />
     <ClInclude Include="..\..\..\Source\SoundSetCollection.h" />
     <ClInclude Include="..\..\..\Source\StartupList.h" />
     <ClInclude Include="..\..\..\Source\Synthesizer.h" />
-    <ClInclude Include="..\..\..\Source\ToneSet.h" />
     <ClInclude Include="..\..\..\Source\TraceLib.h" />
     <ClInclude Include="..\..\..\Source\ChannelToWaDialog.h" />
     <ClInclude Include="..\..\..\Source\Utility.h" />

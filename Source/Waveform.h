@@ -25,11 +25,11 @@ public:
         return s0+(s1-s0)*f;
     }
     // Compute n samples and accumulate them into output. Returns t0+n*dt.
-    timeType resample( T* output, float volume, timeType t, timeType dt, size_t n ) const;
+    timeType resample( T* output, timeType t, timeType dt, size_t n ) const;
 };
 
 template<typename T, int Shift>
-auto SampledSignalBase<T,Shift>::resample( T* output, float volume, timeType t, timeType dt, size_t n ) const -> timeType {
+auto SampledSignalBase<T,Shift>::resample( T* output, timeType t, timeType dt, size_t n ) const -> timeType {
     Assert( t < size()<<timeShift );
     Assert( t+(n-1)*dt < size()<<timeShift );
     const T* w = begin();
@@ -40,7 +40,7 @@ auto SampledSignalBase<T,Shift>::resample( T* output, float volume, timeType t, 
         sampleType s1 = w[i+1];
         float f = (t & unitTime-1)*(1.0f/unitTime);
         // FIXME - redo algebra to shorten dependence chain or exploit FMA?
-        *output++ = (s0+(s1-s0)*f)*volume;
+        *output++ = (s0+(s1-s0)*f);
     }
     return t;
 }

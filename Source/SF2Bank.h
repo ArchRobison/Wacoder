@@ -54,8 +54,8 @@ class SF2Bank {
             uint16_t uint16;
             uint8_t val8[2];
         };
-        // Volume envelope in msec
-        float volEnvMSec() const {return exp2(int16/1200.f);}
+        // Volume envelope in sec
+        float volEnvSec() const {return exp2(int16/1200.f);}
     };
 
     enum class SampleLink : uint16_t {

@@ -337,8 +337,10 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
 }
 
 void GameResizeOrMove( NimblePixMap& map ) {
-
-
+#if 0
+    extern void SF2Parse();
+    SF2Parse();
+#endif
 }
 
 void GameDroppedFile(NimblePoint where, const char* filename) {
@@ -357,6 +359,8 @@ void GameDroppedFile(NimblePoint where, const char* filename) {
                     CopyWaSetToWaPlot( TheWaPlot, name, *w );
             } else if( suffix=="cfg" ) {
                 ReadFreePatConfig(filename);
+            } else if( suffix=="sf2" ) {
+                ReadSF2(filename);
             }
         }
     }

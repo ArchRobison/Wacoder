@@ -22,10 +22,10 @@ void SF2Bank::dumpGen( FILE* f, const Rec_gen& g) const {
             fprintf(f,"freqModLFO=%d",g.amount.int16);
             break;
         case Generator::attackVolEnv:
-            fprintf(f,"attackVolEnv=%g",g.amount.volEnvMSec());
+            fprintf(f,"attackVolEnv=%g",g.amount.volEnvSec());
             break;
         case Generator::releaseVolEnv:
-            fprintf(f,"releaseVolEnv=%g",g.amount.volEnvMSec());
+            fprintf(f,"releaseVolEnv=%g",g.amount.volEnvSec());
             break;
         case Generator::instrument: {
             unsigned i = g.amount.uint16;

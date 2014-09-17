@@ -1,5 +1,6 @@
 #include "Drum.h"
 
+#if 0
 class DrumInstrument: public PatchInstrument {
     const Drum& myDrum;
     typedef Midi::Event Event;
@@ -22,3 +23,4 @@ void DrumInstrument::noteOn( const Event& on, const Event& off ) {
 Midi::Instrument* Drum::makeInstrument() const{
     return new DrumInstrument(*this);
 }
+#endif

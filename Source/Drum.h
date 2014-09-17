@@ -1,17 +1,18 @@
 #ifndef Drum_H
 #define Drum_H
 
-#include "Patch.h"
+class SF2SoundSet;
 
+#if 0
 class Drum: public Synthesizer::SoundSet {
-    Patch* myPatch; // FIXME - use std::unique_ptr here?
     Drum(const Drum&) = delete;
     void operator=(const Drum&) = delete;
 public:
-    const PatchSample& patchSample() const {return (*myPatch)[0];}
    /*override*/ Midi::Instrument* makeInstrument() const;
-   /** Note: takes ownershp. */
-   Drum(Patch* p) : myPatch(p) {}
+   Drum(SF2SoundSet& s, unsigned instrument, unsigned bank) : SoundSet(s,instrument,bank) {
+       Assert(bank==1);
+   }
 };
+#endif
 
 #endif /* Drum_H */

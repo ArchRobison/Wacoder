@@ -12,17 +12,24 @@ using namespace Synthesizer;
 
 //! Source based on a Patch object.
 class SF2Source: public Synthesizer::Source {
-public:
 private:
     typedef Synthesizer::Waveform Waveform;
     const Waveform* waveform;
     float volume;
+    float releaseSlope;
     Waveform::timeType waveDelta;
     Waveform::timeType waveIndex;
     Waveform::timeType loopStart;
     Waveform::timeType loopEnd;
     Waveform::timeType tableEnd;
     bool exitLoopOnRelease;
+    enum class ADSR {
+        attack,
+        decay,
+        sustain,
+        release
+    };
+    ADSR state;
 #if ASSERTIONS
     bool assertOkay();
 #endif
@@ -153,6 +160,8 @@ SF2Source* SF2Source::allocate( const SF2SoundSet& set, unsigned note, unsigned 
             s->loopEnd = ~0u;
         }
         s->exitLoopOnRelease = inst.sampleModes==3;
+        s->state = ADSR::sustain;
+        s->releaseSlope = Synthesizer::SampleRate/exp2((preset.releaseVolEnv+inst.releaseVolEnv)*(1.0f/1200));
         Assert(s->assertOkay());
     } 
     return s;
@@ -174,23 +183,27 @@ void SF2Source::receive( const PlayerMessage& m ) {
     Assert( m.kind==PlayerMessageKind::Release );
     if(exitLoopOnRelease)
         loopEnd = ~0u;
-    else 
-#if 1
-        // FIXME
-        loopEnd = ~0u;
-#else
-        Assert(0);  // Not yet implemented 
-#endif
+    Assert( state==ADSR::sustain );
+    state = ADSR::release;
 }
 
 #if ASSERTIONS
 bool SF2Source::assertOkay() {
     Assert( waveIndex < loopEnd );
-    Assert( loopStart<=loopEnd );
+    Assert( loopStart <= loopEnd );
     Assert( !isLooping() || waveDelta < (loopEnd-loopStart)/2 );    // Nyquest limit on looping
     return true;
 }
 #endif
+
+static float applyRelease( float* acc, float volume, float releaseSlope, unsigned m ) {
+    for( size_t i=0; i<m; ++i ) {
+        acc[i] *= volume;
+        volume -= releaseSlope;
+        if( volume<0 ) volume = 0;
+    }
+    return volume;
+}
 
 unsigned SF2Source::update( float* acc, unsigned requested ) {
     Assert(assertOkay());
@@ -213,7 +226,17 @@ unsigned SF2Source::update( float* acc, unsigned requested ) {
             n = 0;
         }
 #pragma warning( disable : 4146 )
-        waveIndex = waveform->resample(acc, volume, waveIndex, waveDelta, m);
+        waveIndex = waveform->resample(acc, waveIndex, waveDelta, m);
+        if( state==ADSR::release ) {
+            volume = applyRelease(acc, volume, releaseSlope, m);
+            if( volume<=1E-5 ) {
+                waveIndex = tableEnd;
+                loopEnd = ~0u;
+                break;
+            }
+        } else {
+            applyRelease(acc, volume, 0, m);
+        }
         acc += m;
         if( waveIndex>=loopEnd ) {
             Assert(waveIndex-waveDelta<loopEnd);
