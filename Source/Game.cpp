@@ -210,9 +210,12 @@ static void WritePerformance() {
         v.resize(m+n);
         std::copy(channel[1]+0, channel[1]+n, v.begin()+m);
     }
+    float a = 0;
+    for( auto sample: v )
+        a = std::max(a,std::fabs(sample));
     Synthesizer::Waveform w(v.size());
     for(unsigned k=0; k<v.size(); ++k )
-        w[k] = v[k];
+        w[k] = v[k]/a;
     w.writeToFile(s.c_str());
 }
 
