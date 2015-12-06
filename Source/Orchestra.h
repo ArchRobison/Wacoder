@@ -21,6 +21,7 @@ Playing MIDI files through a Synthesizer
 #define Orchestra_H
 
 #include "Midi.h"
+#include "AssertLib.h"
 
 namespace Midi {
 
@@ -37,8 +38,6 @@ public:
 class Orchestra {
     typedef std::vector<Instrument*> ensembleType;
     ensembleType myEnsemble;
-    /** Units = seconds */
-    double myZeroTime;
     std::vector<uint16_t> myDuration;
     EventSeq::iterator myEventPtr;
     EventSeq::iterator myEndPtr;
@@ -50,7 +49,7 @@ class Orchestra {
     void computeDuration(const Tune& tune);
 public:
     //! Construct player with no tune to play.
-    Orchestra() {}
+    Orchestra() : myTune(nullptr) {}
     ~Orchestra();
     //! Prepare to play tune
     void preparePlay(const Tune& tune);
@@ -67,7 +66,11 @@ public:
     void stop();
     //! Update player
     /** Should be polled rapidly (e.g. at video frame rate) */
-    void update();
+    void update(double secondsSinceTime0);
+    // True if end of tune reached.  
+    bool isEndOfTune() const {
+        return myEventPtr>=myEndPtr;
+    }
 };
 
 } // namespace Midi

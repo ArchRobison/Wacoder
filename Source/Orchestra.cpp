@@ -162,7 +162,6 @@ Orchestra::~Orchestra() {
 void Orchestra::preparePlay( const Tune& tune ) {
     clear();
     myTune = &tune;
-    myZeroTime = 0;
     computeDuration(tune);
     myDurationPtr = myDuration.begin();
     myEventPtr = tune.events().begin();
@@ -193,20 +192,15 @@ void Orchestra::commencePlay() {
                 i = new AdditiveInstrument();
         }
     }
-    // Get absolute time
-    myZeroTime = HostClockTime();
     myTune = nullptr;
 }
 
 void Orchestra::stop() {
-    if( myZeroTime ) {
-        for(Instrument* i: myEnsemble)
-            i->stop();
-        myZeroTime = 0;
-    }
+    for(Instrument* i: myEnsemble)
+        i->stop();
 }
 
-/** Since this routine is tightly tied to method update, please keep it lexical close
+/** Since this routine is tightly tied to method update, please keep it lexically close
     to that method, so that the correspondence can be checked. */
 void Orchestra::computeDuration( const Tune& tune ) {
     myDuration.clear();
@@ -252,14 +246,11 @@ void Orchestra::computeDuration( const Tune& tune ) {
 #endif
 }
 
-void Orchestra::update() {
-    if(!myZeroTime)
-        // Nothing to play
-        return;
+void Orchestra::update(double secondsSinceTime0) {
     Assert(Key440AFreq>0);
 
     // Get current time in MIDI "tick" units
-    auto t = Event::timeType((HostClockTime()-myZeroTime)/SecondsPerTock);
+    auto t = Event::timeType(secondsSinceTime0/SecondsPerTock);
 
     // Process MIDI events up to time t
     for( ; myEventPtr<myEndPtr && myEventPtr->time()<=t; ++myEventPtr) {

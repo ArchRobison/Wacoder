@@ -49,7 +49,7 @@ static const char* DecodeDirectSoundError( HRESULT x ) {
 	}
 }
 
-//! Convert floating-point samples in src[0:N_Channel][0:n] to 16-bit samples in dst[0:n]
+//! Convert floating-point samples in src[0:N_Channel][0:n] to 16-bit samples in dst[0:n], and clear src.
 static void ConvertAccumulatorToSamples( NativeSample dst[], Accumulator src, int n ) {
     NativeSample*d = dst;
     for( int i=0; i<n; ++i ) 
@@ -63,36 +63,51 @@ static void ConvertAccumulatorToSamples( NativeSample dst[], Accumulator src, in
         }
 }
 
+static volatile OutputInterruptHandlerType TheOutputInterruptHandler;
+static volatile bool TransientFlag = false;
+
+void SetOutputInterruptHandler(OutputInterruptHandlerType handler) {
+    TheOutputInterruptHandler = handler;
+    TransientFlag = true;
+    while( TransientFlag ) {
+        Sleep(1);
+    }
+}
+
 //! Refill the DirectSoundBuffer
 static void DoSoundOutput() {
-    static DWORD begin;
-    DWORD playCursor;
-    DWORD writeCursor;
-    Assert(TheDirectSound);
-    HRESULT status = DirectSoundBuffer->GetCurrentPosition( &playCursor, &writeCursor );
-    DWORD end = (playCursor+SamplesPerPlayAheadMargin*BytesPerOutputSample) % BytesPerOutputBuffer;
-    if( end!=begin ) {
-        int n = (end+BytesPerOutputBuffer-begin) % BytesPerOutputBuffer / BytesPerOutputSample;
-        Assert( n<=SamplesPerBuffer );
-        void *ptr1, *ptr2;
-        DWORD size1, size2;
-        HRESULT status = DirectSoundBuffer->Lock(begin,n*BytesPerOutputSample,&ptr1,&size1,&ptr2,&size2,0);
-        if( status==DS_OK ) {
-            static Accumulator temp;
-            Synthesizer::OutputInterruptHandler( temp[0], temp[1], n );
+    TransientFlag = false;
+    if( OutputInterruptHandlerType handler = TheOutputInterruptHandler ) {
+        static DWORD begin;
+        DWORD playCursor;
+        DWORD writeCursor;
+        Assert(TheDirectSound);
+        HRESULT status = DirectSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor);
+        DWORD end = (playCursor+SamplesPerPlayAheadMargin*BytesPerOutputSample) % BytesPerOutputBuffer;
+        if(end!=begin) {
+            int n = (end+BytesPerOutputBuffer-begin) % BytesPerOutputBuffer / BytesPerOutputSample;
+            Assert(n<=SamplesPerBuffer);
+            void *ptr1, *ptr2;
+            DWORD size1, size2;
+            HRESULT status = DirectSoundBuffer->Lock(begin, n*BytesPerOutputSample, &ptr1, &size1, &ptr2, &size2, 0);
+            if(status==DS_OK) {
+                static Accumulator temp;
+                handler(temp[0], temp[1], n);
 #if 0
-            for( WaveStream* w=TheWaveStreams; w<TheWaveStreams+N_WaveStream; ++w ) 
-                w->addTo(temp[w->channel()],n);
+                for( WaveStream* w=TheWaveStreams; w<TheWaveStreams+N_WaveStream; ++w ) 
+                    w->addTo(temp[w->channel()],n);
 #endif
-            ConvertAccumulatorToSamples( (NativeSample*)ptr1, temp, size1/BytesPerOutputSample );
-            if( ptr2 )
-                ConvertAccumulatorToSamples( (NativeSample*)ptr2, (AccumulatorPtr)&temp[0][size1/BytesPerOutputSample], size2/BytesPerOutputSample );
-            DirectSoundBuffer->Unlock(ptr1,size1,ptr2,size2);
-            begin = end;
-        } else {
-            Assert(false);
+                ConvertAccumulatorToSamples((NativeSample*)ptr1, temp, size1/BytesPerOutputSample);
+                if(ptr2)
+                    ConvertAccumulatorToSamples((NativeSample*)ptr2, (AccumulatorPtr)&temp[0][size1/BytesPerOutputSample], size2/BytesPerOutputSample);
+                DirectSoundBuffer->Unlock(ptr1, size1, ptr2, size2);
+                begin = end;
+            } else {
+                Assert(false);
+            }
         }
     }
+
 }
 
 static bool InitializeDirectSoundOutput( HWND hwnd ) {

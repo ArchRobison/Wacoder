@@ -1,4 +1,4 @@
-/* Copyright 1996-2014 Arch D. Robison 
+/* Copyright 1996-2015 Arch D. Robison 
 
    Licensed under the Apache License, Version 2.0 (the "License"); 
    you may not use this file except in compliance with the License. 
@@ -65,7 +65,7 @@ static short WindowHeight = ExclusiveMode ? 768 : 192;
 #else
 // Voromoeba "Help" overlay dictates minimum display size
 static short WindowWidth = ExclusiveMode ? 1024 : 1024;
-static short WindowHeight = ExclusiveMode ? 768 : 740;
+static short WindowHeight = ExclusiveMode ? 768 : 1024;
 #endif
 
 //! Set to true between time that a WM_SIZE message is received and GameResizeOrMove is called.
@@ -396,15 +396,14 @@ StringBuilder& StringBuilder::append(const char* src, bool skipnull) {
 
 std::string HostGetFileName(GetFileNameOp op, const char* fileType, const char* fileSuffix) {
     std::string result;
-    char buffer[MAX_PATH+1];
-    OPENFILENAME ofn; 
-    ZeroMemory(&ofn, sizeof(OPENFILENAME));
-    ofn.lStructSize = sizeof(OPENFILENAME);
+    char buffer[MAX_PATH+1] = "";
+    OPENFILENAME ofn;     
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = MainWindowHandle;
-    ofn.lpstrFile = buffer;
     ofn.nMaxFile = sizeof(buffer);
-    ofn.lpstrInitialDir = nullptr;
-    ofn.Flags  = OFN_EXPLORER;
+    ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY;
+    ofn.lpstrFile = buffer;
     char filter[128+5];                                 //+5 is for 3 nulls and "*."
     Assert(strlen(fileType)+strlen(fileSuffix)+3 <= sizeof(filter));
     StringBuilder(filter).append(fileType,true).append("*.").append(fileSuffix,true).append(""); 
@@ -415,6 +414,7 @@ std::string HostGetFileName(GetFileNameOp op, const char* fileType, const char* 
             break;
         case GetFileNameOp::open:
             ofn.lpstrTitle = "Open";
+            ofn.Flags |= OFN_FILEMUSTEXIST;
             if( GetOpenFileName(&ofn) ) {
                 result = buffer;
             }

@@ -1,4 +1,4 @@
-/* Copyright 1996-2012 Arch D. Robison 
+/* Copyright 1996-2015 Arch D. Robison 
 
    Licensed under the Apache License, Version 2.0 (the "License"); 
    you may not use this file except in compliance with the License. 
@@ -23,3 +23,7 @@ const size_t NimbleSoundSamplesPerSec = 44100;
 //! Floating-point sound sample.
 /** Amplitude should be between -1 and 1. */
 typedef float NimbleSoundSample;
+
+typedef void (*OutputInterruptHandlerType)( float* left, float* right, unsigned n );
+
+void SetOutputInterruptHandler(OutputInterruptHandlerType handler);

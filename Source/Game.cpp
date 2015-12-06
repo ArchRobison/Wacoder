@@ -27,6 +27,15 @@ static std::ofstream GameLog("C:\\tmp\\gamelog.txt");
 #endif
 
 static Midi::Orchestra TheOrchestra;
+static double OrchestraZeroTime;
+
+static void StopOrchestra() {
+    if(OrchestraZeroTime!=0) {
+        TheOrchestra.stop();
+        OrchestraZeroTime = 0;
+    }
+}
+
 static std::string TheMidiTuneFileName;  // If empty, then not yet set
 static Midi::Tune TheMidiTune;
 ChannelToWaDialog TheChannelToWaDialog;
@@ -39,7 +48,8 @@ void InitializeMidi( const char* filename ) {
 #endif
 
 static void MidiUpdate() {
-    TheOrchestra.update();
+    if(OrchestraZeroTime)
+        TheOrchestra.update(HostClockTime()-OrchestraZeroTime);
 }
 
 static void CopyTuneToWaPlot(WaPlot& plot, const Midi::Tune& tune) {
@@ -59,7 +69,7 @@ static void CopyWaSetToWaPlot(WaPlot& plot, std::string name, const WaSet& w) {
 
 static void ReadMidiTune(const char* filename) {
     // Make sure player is stopped.
-    TheOrchestra.stop();
+    StopOrchestra();
     if( TheMidiTune.readFromFile(filename) ) {
         TheMidiTuneFileName = filename;
         TheChannelToWaDialog.clear();
@@ -69,6 +79,18 @@ static void ReadMidiTune(const char* filename) {
         // FIXME - HostWarning will exit
         HostWarning(TheMidiTune.readStatus().c_str());
     }
+}
+
+static void PlayTune(bool live=true) {
+    if( TheMidiTune.empty() ) 
+        return;
+    if( live )
+        SetOutputInterruptHandler(Synthesizer::OutputInterruptHandler);
+    TheOrchestra.preparePlay(TheMidiTune);
+    TheChannelToWaDialog.setupOrchestra(TheOrchestra);
+    TheOrchestra.commencePlay();
+    if( live )
+        OrchestraZeroTime = HostClockTime();
 }
 
 const char* GameTitle() {
@@ -171,6 +193,28 @@ static void SaveWacoderProject() {
     SaveWacoderProject(CurrentProjectFileName);
 }
 
+static void WritePerformance() {
+    std::string s = HostGetFileName(GetFileNameOp::create, "WAV output", "wav");
+    SetOutputInterruptHandler(nullptr);
+    PlayTune(false);
+    std::vector<float> v;
+    for(unsigned i=0; !TheOrchestra.isEndOfTune(); ++i) {
+        const int rate = 60;
+        const size_t n = NimbleSoundSamplesPerSec/rate;
+        Assert(n*rate==NimbleSoundSamplesPerSec);
+        TheOrchestra.update(i/double(rate));
+        float channel[2][n];
+        memset(channel,0,sizeof(channel));
+        Synthesizer::OutputInterruptHandler(channel[0], channel[1], n);
+        size_t m = v.size();
+        v.resize(m+n);
+        std::copy(channel[1]+0, channel[1]+n, v.begin()+m);
+    }
+    Synthesizer::Waveform w(v.size());
+    for(unsigned k=0; k<v.size(); ++k )
+        w[k] = v[k];
+    w.writeToFile(s.c_str());
+}
 
 bool GameInitialize() {
     BuiltFromResource::loadAll();
@@ -187,13 +231,6 @@ bool GameInitialize() {
     return true;
 }
 
-static void PlayTune() {
-    if( TheMidiTune.empty() ) return;
-    TheOrchestra.preparePlay(TheMidiTune);
-    TheChannelToWaDialog.setupOrchestra(TheOrchestra);
-	TheOrchestra.commencePlay();
-}
-
 class PlayButton: public ToggleButton {
 public:
     PlayButton() : ToggleButton("Play") {}
@@ -203,7 +240,7 @@ public:
         if( isOn() ) {
 			PlayTune();
         } else {
-            TheOrchestra.stop();
+            StopOrchestra();
         }
     }
 } static ThePlayButton;
@@ -259,7 +296,10 @@ void GameKeyDown( int key ) {
             break;
         case 's'&0x1F:
             SaveWacoderProject();
-            break;;
+            break;
+        case 'w'&0x1F:
+            WritePerformance();
+            break;
 #if 1 // For development only 
         case 'm':  
 		    PlayTune();
