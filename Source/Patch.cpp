@@ -5,6 +5,7 @@
 #include "PoolAllocator.h"
 #include <cstdio>
 #include <cstdint>
+#include <cerrno>
 
 using namespace Synthesizer;
 

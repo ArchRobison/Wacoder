@@ -1,6 +1,7 @@
 #include "DefaultSoundSet.h"
 #include "ReadError.h"
 #include "SF2Bank.h"
+#include <cerrno>
 #include <cstdio>
 
 static void SkipSpace( char*& p ) {

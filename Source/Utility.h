@@ -84,13 +84,13 @@ inline float Square( float z ) {
 
 //! Return random real in [0,a]
 inline float RandomFloat( float a ) {
-    const unsigned modulus = RAND_MAX+1;
+    const unsigned modulus = unsigned(RAND_MAX)+1;
     return rand()%modulus*(a*(1.0f/(modulus-1)));
 }
 
 //! Return random angle
 inline float RandomAngle() {
-    const unsigned modulus = RAND_MAX+1;
+    const unsigned modulus = unsigned(RAND_MAX)+1;
     return rand()%modulus*(2*3.1415926535f/modulus);
 }
 

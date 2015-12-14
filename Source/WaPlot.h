@@ -2,6 +2,7 @@
 #include <map>
 #include <vector>
 #include <climits>
+#include <cfloat>
 #include "NimbleDraw.h"
 #include "Clickable.h"
 #include "LinearTransform1D.h"
@@ -77,7 +78,7 @@ class WaPlot: public Clickable {
 #endif
     struct limits {
         float min, max;
-        void clear() {min=FLT_MAX; max=FLT_MIN;}
+        void clear() {min=FLT_MAX; max=-FLT_MAX;}
         void include( float z ) {
             if( z<min ) min = z;
             if( z>max ) max = z;

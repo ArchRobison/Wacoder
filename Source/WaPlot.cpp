@@ -2,6 +2,7 @@
 #include <map>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 #include "WaPlot.h"
 #include "SmallMark.h"
 
@@ -57,7 +58,7 @@ void WaPlot::drawNotesAndWas( NimblePixMap& window ) {
     for( int i=-1; i<=1; ++i ) {
         int h = i==0 ? 1 : 0;
         int y = ty(logMiddleC+i*log2);
-        window.draw(NimbleRect(0,y-h,window.width(),y+h+1),0x808080);
+        window.draw(NimbleRect(0,y-h,window.width(),y+h+1),NimblePixel::gray);
     }
 	// FIXME - factor note circles and wa cross mechanics into two instances of a template
 
@@ -65,7 +66,7 @@ void WaPlot::drawNotesAndWas( NimblePixMap& window ) {
     for( auto i=myNotes.set.begin(); i!=myNotes.set.end(); ++i ) {
         short r = tr(i->first.r);
         auto& m = CircleMarkCache[r];
-        m.drawOn( window, tx(i->first.x), ty(i->first.y), 0xFFFFFF );
+        m.drawOn( window, tx(i->first.x), ty(i->first.y), NimblePixel::white );
     }
    
     if( !myNotes.chosen.empty() ) {
@@ -83,7 +84,7 @@ void WaPlot::drawNotesAndWas( NimblePixMap& window ) {
     for( auto i=myWas.set.begin(); i!=myWas.set.end(); ++i ) {
         auto& m = CrossMarkCache[myCrossRadius];
 		NimblePoint p(tx(i->first.x), ty(i->first.y));
-        m.drawOn( window, p.x, p.y, 0xFFFFFF );
+        m.drawOn( window, p.x, p.y, NimblePixel::white );
 		// Save coordinates so that cross can be found given a mouse coordinate
 		myWaBuf.push_back(p);
     }
@@ -99,12 +100,12 @@ void WaPlot::drawNotesAndWas( NimblePixMap& window ) {
 	if( myPreciseSelectedWa.x>=0 && myPreciseSelectedWa.y>=0 ) {
 		// Draw the selected mark in red (FIXME - be friendlier to users with limited color acuity)
 		auto& m = CrossMarkCache[myCrossRadius];
-		m.drawOn( window, myPreciseSelectedWa.x, myPreciseSelectedWa.y, 0xFF0000 );
+        m.drawOn( window, myPreciseSelectedWa.x, myPreciseSelectedWa.y, NimblePixel::red );
 	}
     if( haveLiveWa ) {
         int x = tx(liveWa.x);
         int y = ty(liveWa.y);
-        window.draw( NimbleRect(x-4,y-4,x+4,y+4),0x00FF00 );
+        window.draw( NimbleRect(x-4,y-4,x+4,y+4), NimblePixel::green );
     }
 }
 
@@ -154,7 +155,7 @@ void WaPlot::clear() {
 void WaPlot::doDrawOn( NimblePixMap& window ) {
     NimblePixMap area( window, NimbleRect(0,0,clickableWidth(),clickableHeight()));
     // Clear window
-    area.draw(NimbleRect(0,0,area.width(),area.height()),0);
+    area.draw(NimbleRect(0,0,area.width(),area.height()),NimblePixel::black);
     drawNotesAndWas(area);
 }
 

@@ -25,6 +25,7 @@ MIDI Parsing
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cmath>
 #include "AssertLib.h"
 
 namespace Midi {

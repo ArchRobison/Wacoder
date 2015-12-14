@@ -1,4 +1,4 @@
-/* Copyright 1996-2014 Arch D. Robison 
+/* Copyright 1996-2015 Arch D. Robison 
 
    Licensed under the Apache License, Version 2.0 (the "License"); 
    you may not use this file except in compliance with the License. 
@@ -14,7 +14,7 @@
  */
 
 /******************************************************************************
- Graphics layer
+ Graphics layer for Seismic Duck
 *******************************************************************************/
 
 #pragma once
@@ -22,32 +22,25 @@
 #define NimbleDraw_H
 
 #if defined(_WIN32)||defined(_WIN64)
-#define NIMBLE_DIRECTX 1    /* Set to 1 for DirectX targets */
-#define NIMBLE_MAC 0        /* Set to 1 for Mac targets */
+
 #if _MSC_VER
 /* Turn off pesky "possible loss of data" and "forcing value to bool" warnings */
 #pragma warning(disable: 4244 4800) 
 #endif
+#elif __APPLE__
 #else
 #error unsupported target
 #endif /* defined(WIN32)||defined(WIN64) */
 
 #include <cstddef>
 #include "AssertLib.h"
-#include "Utility.h"
 
-//! NimbleIsLittleEndian should be true on little-endian targets, false on big-endian targets.
-#if NIMBLE_DIRECTX
-const bool NimbleIsLittleEndian = true;
-#elif NIMBLE_MAC
-const bool NimbleIsLittleEndian = false;
-#else
-#error Unknown target
-#endif
+typedef unsigned char byte;
 
 //! A point
 class NimblePoint {
 public:
+	//! Coordinates of the point
     short x, y;
     
     //! Construct undefined point
@@ -115,32 +108,55 @@ public:
     }
 };
 
-//! A pixel
-/** Old versions of NimbleDraw supported 16-bit and 32-bit pixels.
-    The current version supports only 32-bit pixels. */
-typedef unsigned NimblePixel;
-
-//! A device-independent color
-struct NimbleColor {
-#if NIMBLE_MAC
-    typedef unsigned short component_t;
-    enum {
-        FULL=0xFFFF                 // Full intensity for component
-    };
-#elif NIMBLE_DIRECTX
-    typedef byte component_t;       // Always some integral type
-    enum {
-        FULL=0xFF                   // Full intensity for component
-    };
-#else
-#error Unknown target
-#endif
-    component_t red, green, blue;   // Always of type component_t
-    NimbleColor() {}
-    explicit NimbleColor( int gray ) : red(gray), green(gray), blue(gray) {}
-    NimbleColor( int r, int g, int b ) : red(r), green(g), blue(b) {};
-    void mix( const NimbleColor& other, float f );
+//! A pixel.
+enum NimblePixel: unsigned {
+    red   = 0xFFFF0000,
+    green = 0xFF00FF00,
+    blue  = 0xFF0000FF,
+    black = 0xFF000000,
+    gray  = 0xFF808080,
+    white = 0xFFFFFFFF,
 };
+
+//! Bitwise-OR of two pixels.
+inline NimblePixel operator|( NimblePixel p, NimblePixel q ) {
+    return NimblePixel(p|q);
+}
+
+inline NimblePixel& operator|=( NimblePixel& p, NimblePixel q ) {
+    p = p | q;
+    return p;
+}
+
+//! A device-independent representation of a color
+struct NimbleColor {
+    //! Type of a component.  Guaranteed to be an integral type.
+    typedef byte component_t;       
+    //! Full intensity for a component
+    static const byte full = 0xFF;
+    //! Components of the color, including alpha channel.
+    component_t blue, green, red, alpha; 
+    //! Creat uninitialized color
+    NimbleColor() {}
+    //! Create shade of gray
+    explicit NimbleColor( int gray ) : alpha(full), red(gray), green(gray), blue(gray) {}
+    //! Get color of pixel
+    NimbleColor( NimblePixel pixel );
+    NimbleColor( int r, int g, int b ) : red(r), green(g), blue(b) {};
+    //! Set *this to mix of proportion (1-f) of *this and proportion f of other.
+    void mix( const NimbleColor& other, float f );
+    //! Convert to pixel.
+    NimblePixel pixel() const;
+    //! Get alpha component from a pixel
+    static component_t alphaOf( NimblePixel p ) {return p>>24;}
+};
+
+inline NimbleColor::NimbleColor( NimblePixel p ) {
+    Assert( sizeof(NimblePixel)==4 );
+    red = p>>16 & 0xFF;
+    green = p>>8 & 0xFF;
+    blue = p & 0xFF;
+}
 
 inline void NimbleColor::mix( const NimbleColor& other, float f ) {
     Assert(0<=f && f<=1.0f);
@@ -149,9 +165,16 @@ inline void NimbleColor::mix( const NimbleColor& other, float f ) {
     blue = blue*(1-f)+other.blue*f;
 }
 
+inline NimblePixel NimbleColor::pixel() const {
+	Assert( sizeof(NimblePixel)==4 );
+	return NimblePixel(alpha<<24 | red<<16 | green<<8 | blue);
+}
+
 //! A view of memory as a rectangular region of NimblePixel.
 /** The pixels within the map are those in the half-open interval [0,width()) x [0,height()).
-    The map also provides mappings between colors and pixels. */
+    The map also provides mappings between colors and pixels.
+	Historical note: NimbleDraw used to support a dynamic choice of 16-bit or 32-bit pixels. 
+	But now it supports only 32-bit pixels. */
 class NimblePixMap {
 public:
     //! Construct undefined map.
@@ -161,40 +184,31 @@ public:
     NimblePixMap( int width, int height, int bitsPerPixel, void* base, int bytesPerRow ); 
 
     //! Construct map for rectangular subregion of another map. 
-    /** The subregion must not go outside the src map. */
     NimblePixMap( const NimblePixMap& src, const NimbleRect& rect ); 
     
-    //! Base-2 log of bits per pixel
-    /** In old versions of NimblePixMap, the depth was determined at run-time. 
-        In the current version, a NimblePixel is presumed to be 32 bits. */
-    int lgBitPixelDepth() const {
-        Assert(sizeof(NimblePixel)==4);
-        return 5;
-    }
- 
     // Base-2 log of bytes per pixel
-    int lgBytePixelDepth() const {return lgBitPixelDepth()-3;}
-
-    // Pixel depth in bits per pixel  
-    int bitPixelDepth() const {return 1<<lgBitPixelDepth();}    
+    int lgBytePixelDepth() const {return lgBitPixelDepth()-3;} 
 
     //! Pixel depth in bytes per pixel
     int bytePixelDepth() const {return 1<<lgBytePixelDepth();}  
  
-    //! Given color, convert to pixel.
-    NimblePixel pixel( const NimbleColor& color ) const;
-
-    //! Given pixel, convert to color
-    NimbleColor color( NimblePixel pixel ) const;
-
-    //! Extract alpha component from a pixel.
-    NimbleColor::component_t alpha( NimblePixel pixel ) const;
-
     //! Width of map in pixels.
     int width() const {return myWidth;}
 
     //! Height of map in pixels
     int height() const {return myHeight;}
+
+    //! Unchecked (in production mode) subscript into map.  Returns pointer to pixel at (x,y)
+    void* at( int x, int y ) const;
+
+    //! Return value of pixel at (x,y)
+    NimblePixel pixel( int x, int y ) const {return *(NimblePixel*)at(x,y);}
+
+    //! Return color of pixel at (x,y)
+    NimbleColor color( int x, int y ) const {return NimbleColor(pixel(x,y));}
+
+    //! Return alpha of pixel at (x,y)
+    NimbleColor::component_t alpha( int x, int y ) const {return NimbleColor::alphaOf(pixel(x,y));}
 
     //! Byte offset from a pixel to the pixel below it.
     /** Declared short because result is often used in multiplications, 
@@ -204,29 +218,14 @@ public:
     //! Draw rectangle using given pixel for its color.
     void draw( const NimbleRect& r, NimblePixel pixel );
 
-    //! Draw this map onto dst.
+    //! Draw this map onto dst, with upper left cornder mapped to dst(x,y).
     void drawOn( NimblePixMap& dst, int x, int y ) const;
 
-    //! Move base address by ammount corresponding to given deltaX and deltaY
+    //! Move base address by amount corresponding to given deltaX and deltaY
     void shift( int deltaX, int deltaY );
 
     //! Move top edge of map down by given number of bytes
     void adjustTop( int delta );
-
-    //! Unchecked (in production mode) subscript into map.  Returns pointer to pixel at (x,y)
-    void* at( int x, int y ) const;
-
-    //! Return value of pixel at (x,y)
-    NimblePixel pixelAt( int x, int y ) const {return *(NimblePixel*)at(x,y);}
-
-    //! Return color of pixel at (x,y)
-    NimbleColor colorAt( int x, int y ) const {return color(pixelAt(x,y));}
-
-    //! Return value of pixel with color interpolated at (x,y)
-    NimblePixel interpolatePixelAt( float x, float y );
-
-    //! Return alpha of pixel at (x,y)
-    NimbleColor::component_t alphaAt( int x, int y ) const {return alpha(pixelAt(x,y));}
 
 private:
     //! Pointer to pixel at (0,0)
@@ -243,6 +242,14 @@ private:
 
     void setBitPixelDepth( int bitsPerPixel );
 
+    //! Base-2 log of bits per pixel
+    /** In old versions of NimblePixMap, the depth was determined at run-time. 
+        In the current version, a NimblePixel is presumed to be 32 bits. */
+    int lgBitPixelDepth() const {
+        Assert(sizeof(NimblePixel)==4);
+        return 5;
+    }
+ 
     // Deny access to assignment in order to prevent slicing errors with NimblePixMapWithOwnership
     void operator=( const NimblePixMap& src );
     friend class NimblePixMapWithOwnership;
@@ -253,14 +260,7 @@ inline void* NimblePixMap::at( int x, int y ) const {
     Assert( 0 <= y && y < height() );
     return (byte*)myBaseAddress + myBytesPerRow*y + (x<<lgBytePixelDepth());
 }
- 
-inline NimbleColor::component_t NimblePixMap::alpha( NimblePixel pixel ) const {
-#if NIMBLE_DIRECTX
-    return pixel>>24;
-#else
-#error Not yet implemented on this platform
-#endif /* NIMBLE_DIRECTX */
-}
+
 //! NimblePixMap that owns its buffer.
 class NimblePixMapWithOwnership: public NimblePixMap {
     void operator=( const NimblePixMapWithOwnership& ); 
