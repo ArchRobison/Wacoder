@@ -120,10 +120,10 @@ static void AutoCorrelate( const float src[], size_t srcLen, float dst[], size_t
 #else /* IPP 8.0 */
     IppEnum funCfg = IppEnum(ippAlgAuto|ippsNormB);
     int bufSize = 0;
-    IppStatus status = ippsAutoCorrNormGetBufferSize(srcLen, dstLen, ipp32f, funCfg, &bufSize);
+    IppStatus status = ippsAutoCorrNormGetBufferSize(int(srcLen), int(dstLen), ipp32f, funCfg, &bufSize);
     Ipp8u *buffer = ippsMalloc_8u( bufSize );
     Assert( status==ippStsNoErr );
-    status = ippsAutoCorrNorm_32f(src, srcLen, dst, dstLen, funCfg, buffer);
+    status = ippsAutoCorrNorm_32f(src, int(srcLen), dst, int(dstLen), funCfg, buffer);
     Assert( status==ippStsNoErr );
     ippsFree( buffer );
 #endif

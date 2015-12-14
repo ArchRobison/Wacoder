@@ -64,7 +64,7 @@ void SF2Bank::dump( const std::string& filename ) {
         return;
     for( size_t i=0; i<phdr.size(); ++i ) {
         const auto& h = phdr[i];
-        fprintf(d,"phdr[%u] %-20s preset=%u bank=%u\n",i,std::string(h.name,20).c_str(),h.preset,h.bank);
+        fprintf(d,"phdr[%u] %-20s preset=%u bank=%u\n",unsigned(i),std::string(h.name,20).c_str(),h.preset,h.bank);
         for( size_t j=phdr[i].presetBagIndex; j<phdr[i+1].presetBagIndex; ++j ) {
             fprintf(d,"\tpreset zone %u\n",unsigned(j));
             fprintf(d,"\t    ");
@@ -78,7 +78,7 @@ void SF2Bank::dump( const std::string& filename ) {
 
     for( size_t i=0; i<inst.size(); ++i ) {
         const auto& I = inst[i];
-        fprintf(d,"inst[%u] %-20s\n",i,std::string(I.name,20).c_str());
+        fprintf(d,"inst[%u] %-20s\n",unsigned(i),std::string(I.name,20).c_str());
          for( size_t j=inst[i].instBagIndex; j<inst[i+1].instBagIndex; ++j ) {
             fprintf(d,"\tinst zone %u\n",unsigned(j));
             fprintf(d,"\t    ");
@@ -92,7 +92,7 @@ void SF2Bank::dump( const std::string& filename ) {
 
     for( unsigned i=0;i<shdr.size(); ++i ) {
         const auto& s = shdr[i];
-        fprintf(d, "shdr[%u] %20s start=%u end=%u loop=[%u %u] rate=%u pitch=%u correction=%u\n", i, std::string(s.name, s.name+20).c_str(), s.start, s.end, s.startLoop, s.endLoop, s.sampleRate, s.originalPitch, s.pitchCorrection);
+        fprintf(d, "shdr[%u] %20s start=%u end=%u loop=[%u %u] rate=%u pitch=%u correction=%u\n", i, std::string(s.name, s.name+20).c_str(), unsigned(s.start), unsigned(s.end), unsigned(s.startLoop), unsigned(s.endLoop), unsigned(s.sampleRate), s.originalPitch, s.pitchCorrection);
     }
 
     fclose(d);

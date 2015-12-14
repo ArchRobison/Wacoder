@@ -3,6 +3,7 @@
 #include "WaPlot.h"
 #include "Host.h"
 #include <cstdio>
+#include <cmath>
 
 const size_t VoiceChunkSize = 2048;
 
@@ -54,7 +55,7 @@ float VoicePeak;
 static float PeakAmplitude( const float a[], int n ) {
     float b = 0;
     for( int i=0; i<n; ++i ) {
-        float x = fabs(a[i]);
+        float x = std::fabs(a[i]);
         if( x>b ) b=x;
     }
     return b;

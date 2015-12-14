@@ -37,7 +37,7 @@ static std::string GetSimpleName( const std::string& s ) {
 
 void ChannelToWaDialog::setFromTune( const Midi::Tune& tune ) {
 	Assert(myItems.empty());
-    for( size_t i=0, n=tune.channels().size(); i<tune.channels().size(); ++i ) {
+    for( size_t i=0, n=tune.channels().size(); i<n; ++i ) {
         const Midi::Channel& c = tune.channels()[i];
         if( !c.isDrum() ) {
             channelOrSoundSet tw(false, c.name());
@@ -68,8 +68,7 @@ void ChannelToWaDialog::addChannel( const std::string& name, Midi::Event::channe
 }
 
 void ChannelToWaDialog::setupOrchestra(Midi::Orchestra& player) {
-    const Midi::Tune& tune = player.tune();
-    Synthesizer::SoundSet* s = nullptr;
+     Synthesizer::SoundSet* s = nullptr;
     for( const channelOrSoundSet& i : myItems )
         if( i.isSoundSet ) {
             // WaSet to use for subsquent channels, until another WaSet is seen.

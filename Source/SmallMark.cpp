@@ -1,5 +1,6 @@
 #include "SmallMark.h"
 #include <algorithm>
+#include <cmath>
 
 void SmallMark::makeCircle( int r ) {
     // Adapted from http://free.pages.at/easyfilter/bresenham.html

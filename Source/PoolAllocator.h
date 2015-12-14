@@ -2,6 +2,7 @@
 #define PoolAllocator_H
 
 #include <cstddef>
+#include <cstring>
 
 //! No-frills allocator class suitable for real-time use.
 template<typename T>
@@ -54,7 +55,7 @@ public:
         Assert( begin<=x && x<end );
         x->~T();
 #if ASSERTIONS
-        memset( x, 0xcd, sizeof(T) );
+        std::memset( x, 0xcd, sizeof(T) );
 #endif
         next(x) = free;
         free = x;
