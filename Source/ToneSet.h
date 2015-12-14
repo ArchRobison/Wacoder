@@ -1,5 +1,5 @@
 #ifndef ToneSet_H
-#define ToneSet_h
+#define ToneSet_H
 
 #include "Orchestra.h"
 #include "Patch.h"
