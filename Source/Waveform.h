@@ -9,7 +9,11 @@ static const size_t SampleRate = 44100;
 
 template<typename T, int Shift> 
 class SampledSignalBase: public SimpleArray<T,1> {
+    typedef SimpleArray<T,1> base;
 public:
+    using base::size;
+    using base::begin;
+    using base::end;
     typedef T sampleType;
     typedef unsigned timeType;	                            // Unsigned type       
     static const int timeShift = Shift;

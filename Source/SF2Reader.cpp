@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdint>
+#include <cerrno>
 #include <string>
 #include "ReadError.h"
 #include "AssertLib.h"

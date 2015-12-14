@@ -1,6 +1,7 @@
 #include "Midi.h"
 #include <cstdio>
 #include <algorithm>
+#include <cerrno>
 
 void SanityCheck() {
     char buf[1024];

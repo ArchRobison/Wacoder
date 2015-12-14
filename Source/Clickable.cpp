@@ -43,7 +43,7 @@ void ToggleButton::doDrawOn( NimblePixMap& map ) {
 	int w = myPixMap.width();
     int h = myPixMap.height()/2;
     int o = myButtonIsOn ? h : 0;
-    NimblePixel blue = myButtonSelected ? 0xFF : 0x00;
+    NimblePixel blue = NimblePixel(myButtonSelected ? 0xFF : 0x00);
 	for( int y=0; y<h; ++y ) {
 		const NimblePixel* src = (NimblePixel*)myPixMap.at(0,y+o);
 		NimblePixel* dst = (NimblePixel*)map.at(0,y);
@@ -83,7 +83,7 @@ static void Hueify( NimblePixMap& map, Hue hue ) {
     for( int y=0; y<map.height(); ++y ) {
         NimblePixel* p = (NimblePixel*)map.at(0,y);
         for( int x=0; x<w; ++x ) 
-            p[x] |= hue;
+            p[x] |= NimblePixel(hue);
     }
 }
 
@@ -106,7 +106,7 @@ void PermutationDialog::doDrawOn( NimblePixMap& window ) {
     setClickableSize(w,h);
     myRowHeight = TheListFont.height();
     int indentFactor = 1.618*myRowHeight;
-    int n = size();
+    int n = int(size());
     for( int i=0; i<n; ++i ) {
         const int xmargin = 3;
         const int ymargin = 0;
@@ -114,7 +114,7 @@ void PermutationDialog::doDrawOn( NimblePixMap& window ) {
         if( y>=h ) break;   // Quit if run off below bottom of screen
         int l = indent(i)*indentFactor;
         if( l>0 ) {
-            window.draw(NimbleRect(0,y,l,y+myRowHeight), 0);
+            window.draw(NimbleRect(0,y,l,y+myRowHeight), NimblePixel::black);
         }
         TheWordBox.drawOn(window,NimbleRect(l,y,w,y+myRowHeight));
         // Create box for the word, clipping on bottom if necessary.
@@ -127,10 +127,10 @@ void PermutationDialog::doDrawOn( NimblePixMap& window ) {
                 h |= HueAccented;
             Hueify(box,h);
         }
-        TheListFont.drawOn( box, xmargin, ymargin, name(i), 0xFFFFFF );
+        TheListFont.drawOn( box, xmargin, ymargin, name(i), NimblePixel::white );
     }
     if( n*myRowHeight<h ) 
-        window.draw(NimbleRect(0,n*myRowHeight,w,h),0);
+        window.draw(NimbleRect(0,n*myRowHeight,w,h), NimblePixel::black);
     if( myInsertPoint!=-1 ) {
         int y = myInsertPoint*myRowHeight;
         NimblePixMap box(window,NimbleRect(0,Max(0,y-2),w,y+2));
@@ -150,11 +150,12 @@ short PermutationDialog::choose( NimblePoint p ) {
 void PermutationDialog::doMouseDown( NimblePoint p ) {
     int k = choose(p);
     myAccented = k;
-    if( k>=0 ) 
+    if( k>=0 ) {
         if( k==mySelected )
             mySelected = -1;
         else
             mySelected = choose(p);
+    }
     myMouseDown = true;
 }
 

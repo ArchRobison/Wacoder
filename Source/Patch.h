@@ -8,6 +8,7 @@
 
 class Patch;
 class PatchSample;
+class PatchSource;
 
 //! Module for finite-state machine used to implement looping and ping-ponging patches.
 class PatchStateOps {

@@ -71,7 +71,7 @@ protected:
     friend void OutputInterruptHandler( Waveform::sampleType* left, Waveform::sampleType* right, unsigned n );
     friend class Player;
     //! Set acc[0:n] to next n samples (or fewer if src has reached its end).  Returns nmber of samples created
-    virtual size_t update( float* acc, unsigned n ) = 0;
+    virtual unsigned update( float* acc, unsigned n ) = 0;
     virtual void destroy() = 0;
     //! Asynchronously called when a message is received by the interrupt handler.
     virtual void receive( const PlayerMessage& m ) = 0;
@@ -84,7 +84,7 @@ class SimpleSource: public Source {
     unsigned short waveLowIndex;    // Low 16 bits, i.e. bits after the fixed-point
     unsigned int waveHighIndex;     // Upper 32 bits, i.e. integer part of index
     Waveform::timeType waveDelta; 
-    /*override*/ unsigned update( float* acc, unsigned n ); 
+    /*override*/ unsigned update( float* acc, unsigned n );
     /*override*/ void destroy();  
     /*override*/ void receive( const PlayerMessage& m );
 public:

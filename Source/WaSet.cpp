@@ -1,13 +1,14 @@
 #include "Synthesizer.h"
 #include <utility>
 #include <vector>
+#include <cfloat>
 #include "Utility.h"
 #include "WaSet.h"
 
 #define USE_IPP 1
 
 #if USE_IPP
-#include "ipp\include\ipps.h"
+#include "ipp/include/ipps.h"
 #endif
 
 using namespace Synthesizer;
@@ -24,7 +25,7 @@ static float AveragePower( const float* a, int n ) {
 
 static void FindLeadingSlopes( const float* b, int n, bool* c, int stride, float ratio ) {
     float minb = FLT_MAX;
-    float maxb = FLT_MIN;
+    float maxb = -FLT_MAX;
     int d = 0;
     for( int i=0; i<n; ++i, b+=stride, c+=stride ) {
         float x = *b;
@@ -34,11 +35,12 @@ static void FindLeadingSlopes( const float* b, int n, bool* c, int stride, float
             maxb = x;
         switch( d ) {
             case 0:
-                if( maxb/minb>=ratio )
+                if( maxb/minb>=ratio ) {
                     if( x-minb < (maxb-minb)/2 )
                         d = -1;
                     else 
                         d = 1;
+                }
                 break;
             case 1:
                 if( x<maxb/ratio ) {

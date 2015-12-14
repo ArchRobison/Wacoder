@@ -17,6 +17,8 @@
  Sound layer
 *******************************************************************************/
 
+#include <cstddef>
+
 //! Default sample rate
 const size_t NimbleSoundSamplesPerSec = 44100;
 
