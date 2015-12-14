@@ -68,15 +68,17 @@ NimblePixMap::NimblePixMap( const NimblePixMap& src, const NimbleRect& rect ) {
 }
 
 void NimblePixMap::draw( const NimbleRect& r, NimblePixel pixel ) {
-    Assert( 0<=r.top );
-    Assert( r.bottom<=height() );
     int xl = Max(0,int(r.left));
     int xr = Min(int(r.right),width() );
     int w = xr-xl;
-    for( int y=r.top; y<r.bottom; ++y ) {
-        NimblePixel* out = (NimblePixel*)at(xl,y);
-        for( int x=0; x<w; ++x )
-            *out++ = pixel;
+    if( w>0 ) {
+        int yt = Max(0,int(r.top));
+        int yb = Min(height(),int(r.bottom));
+        for( int y=yt; y<yb; ++y ) {
+            NimblePixel* out = (NimblePixel*)at(xl,y);
+            for( int x=0; x<w; ++x )
+                *out++ = pixel;
+        }
     }
 }
 

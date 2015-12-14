@@ -358,7 +358,7 @@ void GameUpdateDraw( NimblePixMap& screen, NimbleRequest request ) {
         }));
         DrawClickable( TheWaPlot, screen, 0, 0 );
         DrawClickable( TheChannelToWaDialog, screen, x, InputVolumeMeter.height() );
-        screen.draw(NimbleRect(x,0,x+1,screen.height()), screen.pixel(NimbleColor(128)));
+        screen.draw(NimbleRect(x,0,x+1,screen.height()), NimbleColor(128).pixel());
         extern float VoicePeak;
         InputVolumeMeter.setLevel(Min(1.0f,VoicePeak));
         InputVolumeMeter.drawOn( screen, x, 0 );

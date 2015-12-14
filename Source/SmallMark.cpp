@@ -56,7 +56,7 @@ void SmallMark::drawOn( NimblePixMap& window, int x, int y, NimblePixel color ) 
 }
 
 void SmallMark::hueify( NimblePixMap& window, int x, int y, Hue h ) const {
-    NimblePixel g = h|0x404040;
+    NimblePixel g = NimblePixel(h|0x404040);
     doOp(window,x,y,[g](NimblePixel& p) {p|=g;});
 }
 

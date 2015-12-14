@@ -120,7 +120,7 @@ enum NimblePixel: unsigned {
 
 //! Bitwise-OR of two pixels.
 inline NimblePixel operator|( NimblePixel p, NimblePixel q ) {
-    return NimblePixel(p|q);
+    return NimblePixel(unsigned(p)|unsigned(q));
 }
 
 inline NimblePixel& operator|=( NimblePixel& p, NimblePixel q ) {

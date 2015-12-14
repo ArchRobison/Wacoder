@@ -25,20 +25,20 @@
 //! Given point inside transparent box, find bounds of box.
 static NimbleRect FindTransparentBox( const NimblePixMap& map, int xInside, int yInside ) {
     NimbleRect box;
-    Assert( map.alphaAt(xInside,yInside)<NimbleColor::FULL/2 );
+    Assert( map.alpha(xInside,yInside)<NimbleColor::full/2 );
     int x=xInside;
     int y=yInside;
-    while( x>0 && map.alphaAt(x-1,y)<NimbleColor::FULL/2 ) 
+    while( x>0 && map.alpha(x-1,y)<NimbleColor::full/2 ) 
         --x;
-    while( y>0 && map.alphaAt(x,y-1)<NimbleColor::FULL/2 ) 
+    while( y>0 && map.alpha(x,y-1)<NimbleColor::full/2 ) 
         --y;
     box.left=x;
     box.top=y;
     x=xInside;
     y=yInside;
-    while( y+1<map.height() && map.alphaAt(x,y+1)<NimbleColor::FULL/2 ) 
+    while( y+1<map.height() && map.alpha(x,y+1)<NimbleColor::full/2 ) 
         ++y;
-    while( x+1<map.width() && map.alphaAt(x+1,y)<NimbleColor::FULL/2 ) 
+    while( x+1<map.width() && map.alpha(x+1,y)<NimbleColor::full/2 ) 
         ++x;
     box.right=x+1;
     box.bottom=y+1;
@@ -96,7 +96,7 @@ inline bool Font::isBlankColumn( const NimblePixMap& map, int x ) {
     Assert(0<=x && x<map.width());
     int h = map.height();
     for( int i=0; i<h; ++i )
-        if( map.pixelAt(x,i)&0xFF )
+        if( map.pixel(x,i)&0xFF )
             return false;
     return true;
 }
@@ -125,7 +125,7 @@ void Font::buildFrom( const NimblePixMap& map ) {
             for( int j=0; j<width; ++j ) {
                 Assert(p<storage+nByte);
                 // Bottom row of pixels is used only as internal marker for ' ' and ".
-                *p++ = i==myHeight-1 ? 0 : map.pixelAt(xStart+j,i)&0xFF; 
+                *p++ = i==myHeight-1 ? 0 : map.pixel(xStart+j,i)&0xFF; 
             }
     }
     start[charMax+1-charMin] = p-storage;
@@ -237,17 +237,17 @@ void DigitalMeter::drawOn( NimblePixMap& map, int x, int y ) const {
 void InkOverlay::buildFrom( const NimblePixMap& map ) {
     myWidth=map.width();
     myHeight=map.height();
-    NimblePixel transparent = map.pixelAt(0,0);
+    NimblePixel transparent = map.pixel(0,0);
     for( int pass=0; pass<2; ++pass ) {
         size_t count = 0;
         unsigned oldY = 0;
         for( int y=0; y<map.height(); ++y )
             for( int x=0; x<map.width(); ++x ) 
-                if( map.pixelAt(x,y)!=transparent ) {
+                if( map.pixel(x,y)!=transparent ) {
                     while( y-oldY>runType::dyMax ) {
                         if( pass==1 ) {
                             runType* r = myArray+count;
-                            r->color = 0;   // Color not used
+                            r->color = NimblePixel::black;   // Color not used
                             r->x = 0; 
                             r->dy = runType::dyMax;
                             r->len = 0;    
@@ -256,7 +256,7 @@ void InkOverlay::buildFrom( const NimblePixMap& map ) {
                         ++count;
                     }
                     NimblePixel* p = (NimblePixel*)map.at(x,y);
-                    NimblePixel c = map.pixelAt(x,y);
+                    NimblePixel c = map.pixel(x,y);
                     int len = 1;
                     while( x+len<map.width() && p[len]==c ) 
                         ++len;
